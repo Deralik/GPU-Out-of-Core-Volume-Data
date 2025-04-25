@@ -77,6 +77,8 @@ namespace data
 
         void set_data(const std::vector<uint8_t> &data);
 
+        void set_data(const std::vector<uint8_t> &data, const uint32_t offset, const uint32_t size);
+
         void set_level(uint32_t level);
 
         void set_position(const tdns::math::Vector3ui &position);
@@ -169,6 +171,12 @@ namespace data
     inline void Brick::set_data(const std::vector<uint8_t> &data)
     {
         std::copy(data.begin(), data.end(), _data.begin());
+    }
+
+    //---------------------------------------------------------------------------------------------------
+    inline void Brick::set_data(const std::vector<uint8_t> &data, const uint32_t offset, const uint32_t size)
+    {
+        std::copy(data.begin() + offset, data.begin() + offset + size, _data.begin());
     }
 
     //---------------------------------------------------------------------------------------------------

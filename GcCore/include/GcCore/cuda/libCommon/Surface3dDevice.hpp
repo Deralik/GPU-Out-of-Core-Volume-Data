@@ -121,8 +121,8 @@ namespace common
     template<typename T>
     Surface3dDevice<T>::~Surface3dDevice()
     {
-        cudaDestroySurfaceObject(_surface);
-        cudaFreeArray(_dataArray);
+        CUDA_SAFE_CALL_NOEXCEPT(cudaDestroySurfaceObject(_surface));
+        CUDA_SAFE_CALL_NOEXCEPT(cudaFreeArray(_dataArray));
     }
 
     //---------------------------------------------------------------------------------------------

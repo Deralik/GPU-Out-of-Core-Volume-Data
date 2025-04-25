@@ -34,7 +34,7 @@ namespace common
 
         if (result)
         { 
-            //TODO : pass comand line args
+            // @TODO : pass comand line args
             dump_cartridge(0, nullptr);
             dump_category();
         }

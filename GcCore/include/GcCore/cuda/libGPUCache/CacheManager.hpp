@@ -12,6 +12,9 @@
 #include <thrust/copy.h>
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
+// #include <thrust/shuffle.h>
+// #include <thrust/random.h>
+#include <thrust/sort.h>
 
 #include <GcCore/libMath/Vector.hpp>
 #include <GcCore/libCommon/KernelObject.hpp>
@@ -99,7 +102,7 @@ namespace gpucache
 
         void load_new_bricks();
 
-    protected:
+    public:
 
         /**
         * Member data
@@ -117,6 +120,12 @@ namespace gpucache
 
         tdns::math::Vector3ui                                           _brickSize;             ///<
         tdns::math::Vector3ui                                           _covering;              ///<
+
+        // vnrNetwork                                                      _net;                   ///< Injected model network
+        // vnr::vec3f                                                      _volDims;               ///< Volume dims for coordinate normalization
+        // vnr::vec3f*                                                     _d_coords;              ///< Coordinates to be offset for VNR on Device
+        // vnr::vec3f*                                                     _d_outCoords;           ///< Coordinates for inference
+        // float*                                                          _d_values;              ///< Output values from network
 
     private:
         
@@ -149,7 +158,7 @@ namespace gpucache
 #endif
 
         _tableCaches.resize(cacheSize.size() - 1);
-        _timestamp = 1;
+        _timestamp = 0;
 
         uint32_t nbLevelOfResolution = volumeSizes.size();
         uint32_t nbLevelPTHierarchy = cacheSize.size() + 1;
@@ -247,6 +256,7 @@ namespace gpucache
 
         // As many entry as bricks in the volume (in each level of resolution)
         _requestBuffer = tdns::common::create_unique_ptr<tdns::common::DynamicArray3dDevice<uint32_t>>(size);
+        cudaMemset(_requestBuffer->data(), 0, size[0]*size[1]*size[2]*sizeof(uint32_t));
 
         size = cacheSize.front() * blockSize.front();
         // size[0] = size[1] = size[2] = 0;
@@ -260,7 +270,7 @@ namespace gpucache
         const tdns::math::Vector3ui &brickSize = blockSize.front();
 
         // Number of brick requests is limited to 50 !
-        _nbMaxRequests = 50;
+        _nbMaxRequests = 40;
         _requestHandler = tdns::common::create_unique_ptr<RequestHandler<T>>(volumeConfiguration, _nbMaxRequests, gpuID);
         _requestDone = false;
         _requestHandler->start();
@@ -283,6 +293,61 @@ namespace gpucache
         }
 
         *_initialOverRealSize = initialOverReal;
+
+        // vnr::vec3f *h_coords;
+        // h_coords = new vnr::vec3f[brickSize[0]*brickSize[1]*brickSize[2]];
+
+        // int n = 0;
+        // for (uint i=0; i<brickSize[2]; ++i) {
+        //     for (uint j=0; j<brickSize[1]; ++j) {
+        //         for (uint k=0; k<brickSize[0]; ++k) {
+        //             h_coords[n] = vnr::vec3f(k,j,i);
+        //             n++;
+        //         }
+        //     }
+        // }
+        // const uint N = n * sizeof(vnr::vec3f);
+
+        // cudaMalloc(&_d_coords, N);
+        // cudaMalloc(&_d_outCoords, N * _nbMaxRequests);
+        // cudaMemcpy(_d_coords, h_coords, N, cudaMemcpyHostToDevice);
+
+        // cudaMalloc(&_d_values, n * sizeof(T) * _nbMaxRequests);
+
+        // // cudaMalloc(&_d_outCoords, n * sizeof(vnr::vec3f) * 50); // hardcoded max num requests for both for now
+        // // cudaMalloc(&_d_values, n * sizeof(float) * 50);
+
+        // delete[] h_coords;
+
+        // vnrJson root = vnrCreateJsonBinary(volumeConfiguration.VolumeDirectory + "/params.json");
+
+        // _net = vnrCreateNetwork(root);
+
+        // if (root.contains("volume")) {
+        //     _volDims = vnr::vec3f(root["volume"]["dims"]["x"].get<int>(),
+        //                           root["volume"]["dims"]["y"].get<int>(),
+        //                           root["volume"]["dims"]["z"].get<int>());
+            
+        //     // Manual dims saving for OUT-OF-CORE trained params
+
+        //     //     root["volume"] = {
+        //     //         { "dims", {
+        //     //         { "x", 2048 },
+        //     //         { "y", 2048 },
+        //     //         { "z", 1920 }
+        //     //         }}
+        //     // //     };
+
+        //     //     const auto broot = vnrJson::to_bson(root);
+        //     //     std::ofstream ofs("new_params.json", std::ios::binary | std::ios::out);
+        //     //     ofs.write((char*)broot.data(), broot.size());
+        //     //     ofs.close();
+
+        //     // End of Manual saving
+
+        //     std::cout << "Volume Dims: "<< _volDims.x << ' ' << _volDims.y << ' ' << _volDims.z << std::endl;
+        // }
+
     }
 
     //---------------------------------------------------------------------------------------------------
@@ -290,8 +355,7 @@ namespace gpucache
     inline CacheManager<T>::~CacheManager()
     {
         _requestHandler->stop();
-        // CUDA_SAFE_CALL(cudaFree(_k_tableCache));
-        cudaFree(_k_tableCache);
+        CUDA_SAFE_CALL_NOEXCEPT(cudaFree(_k_tableCache));
     }
 
     //---------------------------------------------------------------------------------------------------
@@ -323,7 +387,7 @@ namespace gpucache
         //not ready to load new bricks and we did not load the last request.
         if (_requestHandler->is_working())
         {
-            ++_timestamp;
+            _timestamp += 1000;
             return false;
         }
 
@@ -348,7 +412,7 @@ namespace gpucache
             _startLoading = std::chrono::high_resolution_clock::now();
             check = prepare_bricks();
         }
-        ++_timestamp;
+        _timestamp += 1000;
 
         return check;
     }
@@ -399,17 +463,18 @@ namespace gpucache
         for (auto it = _tableCaches.begin(); it != _tableCaches.end(); ++it)
         {
             create_mask(mask, **it);
-
             // Update the LRU cache with the mask
             (*it)->update(mask, true);
         }
     }
 
     //---------------------------------------------------------------------------------------------------
+
     template<typename T>
     inline void CacheManager<T>::create_request_list(thrust::device_vector<uint4> &requestedBricks)
     {
-        thrust::device_vector<size_t> result(_requestBuffer->size());
+        static thrust::device_vector<size_t> result(_requestBuffer->size());
+        static thrust::device_vector<uint32_t> temp_requests(_requestBuffer->size());
 
         // stream compaction to keep the flaged elements (with curent timestamp)
         size_t nbElements = thrust::copy_if
@@ -418,8 +483,48 @@ namespace gpucache
             thrust::counting_iterator<size_t>(_requestBuffer->size() - 1),
             _requestBuffer->begin(),
             result.begin(),
-            predicate::equal<uint32_t>(_timestamp)
+            predicate::is_greater_equal<uint32_t>(_timestamp)
         ) - result.begin();
+
+        // if (_timestamp % 10 == 0){
+        //     std::cout << nbElements << ' ' << _timestamp << std::endl << std::endl;
+        // }
+
+        // static thrust::default_random_engine rng;
+        // thrust::shuffle(result.begin(), result.begin()+nbElements, rng);
+
+        // thrust::sort(result.begin(), result.begin() + nbElements, thrust::greater<size_t>());
+        thrust::device_vector<size_t> temp_result = result;
+        thrust::copy(_requestBuffer->begin(), _requestBuffer->end(), temp_requests.begin());
+
+        // auto sort_permute = thrust::make_permutation_iterator(_requestBuffer->begin(), temp.begin());
+
+        thrust::sort_by_key(
+            thrust::make_permutation_iterator(temp_requests.begin(), temp_result.begin()),
+            thrust::make_permutation_iterator(temp_requests.begin(), temp_result.begin()+nbElements),
+            result.begin(),
+            thrust::greater<size_t>()
+        );
+
+        // thrust::host_vector<size_t> h_result = result;
+        // thrust::host_vector<uint32_t> h_buffer(_requestBuffer->size());
+        // thrust::copy(_requestBuffer->begin(), _requestBuffer->end(), h_buffer.begin());
+
+        // cudaDeviceSynchronize();
+
+        // for (int i=0; i<50; i++) {
+        //     std::cout << i << ": Brick_id: " << h_result[i] << " | Rank: " << h_buffer[h_result[i]] << std::endl;
+        // }
+        
+        // std::cout << "TimeStamp: " << _timestamp << std::endl;
+
+        // for (int i=0; i < h_result.size(); i++) {
+        //     if (h_result[i] >= _requestBuffer->size())
+        //         printf("%i: %lu\n", i, h_result[i]);
+        // }
+
+
+
 
         // To mesure the time to handle a list of bricks requests
         static bool done = false;
@@ -444,6 +549,7 @@ namespace gpucache
 
         // Request list with 3D indexes and level of resolution
         requestedBricks.resize(nbElements);
+
 
         // Prepare the kernel launch
         const dim3 nbThreadsPerBlock(std::min(128U, static_cast<uint32_t>(nbElements)), 1, 1);
@@ -482,7 +588,7 @@ namespace gpucache
         
         create_request_list(requestedBricks);
 
-        uint32_t nbBricks = static_cast<uint32_t>(requestedBricks.size());
+        const uint32_t nbBricks = static_cast<uint32_t>(requestedBricks.size());
         if (nbBricks == 0) return true;
 
         _requestHandler->notify_request(requestedBricks, [&] () { this->end_of_load_callback(); });/*std::bind(&CacheManager::end_of_load_callback, this));*/
@@ -502,13 +608,13 @@ namespace gpucache
     template<typename T>
     inline void CacheManager<T>::load_new_bricks()
     {
-        thrust::device_vector<uint4> &requestedBricks = _requestHandler->get_asked_bricks();
+        static thrust::device_vector<uint4> &requestedBricks = _requestHandler->get_asked_bricks();
         uint32_t nbBricks = static_cast<uint32_t>(requestedBricks.size());
         if (nbBricks == 0) return;
         uint32_t nbNonEmptyBricks = static_cast<uint32_t>(_requestHandler->get_nb_non_empty_bricks());
 
         // Positions of the bricks that will be remove by the new requested bricks. (The ones at the end of the LRU)
-        thrust::device_vector<LruContent> &dataCacheLRU = _dataCache->get_lru();
+        static thrust::device_vector<LruContent> &dataCacheLRU = _dataCache->get_lru();
         LruContent *endDataCacheLRUpositions = dataCacheLRU.data().get() + (dataCacheLRU.size() - nbNonEmptyBricks);
         
         // cuda kernel configuration
@@ -534,6 +640,7 @@ namespace gpucache
 #endif
             CUDA_CHECK_KERNEL_ERROR();
         }
+            // std::cout << "-------------------------\n";
 
         // ====================== UPDATE LRU / BRICKS POSITIONS ==================
         uint3 brickSize = *reinterpret_cast<const uint3*>(_requestHandler->get_brick_size().data());
@@ -568,8 +675,20 @@ namespace gpucache
 #endif
             CUDA_CHECK_KERNEL_ERROR();
             // ====================== WRITE BRICKS IN CACHE ==================
-            T *bricks = nullptr;
-            _requestHandler->get_request_buffer().get_mapped_device_pointer(&bricks);
+            // T *bricks = nullptr;
+            static T* bricks = (T*)_requestHandler->_bricksManager->_d_values;
+            // static T* bricks = (T*)_d_values;
+            // _requestHandler->get_request_buffer().get_mapped_device_pointer(&bricks);
+
+            // dim3 blockDim(16, 8, 8);
+            // dim3 gridDim(((brickSize.x * _nbMaxRequests) + blockDim.x -1) / blockDim.x,
+            //              ((brickSize.y * _nbMaxRequests) + blockDim.y -1) / blockDim.y,
+            //              ((brickSize.z * _nbMaxRequests) + blockDim.z -1) / blockDim.z);
+
+            // fillAllCoords<<<gridDim,blockDim>>>(brickSize, requestedBricks.data().get(), _volDims, _nbMaxRequests, _d_coords, _d_outCoords);
+            // CUDA_SYNC_CHECK();
+
+            // vnrInfer(_net, (vnrDevicePtr)(_d_outCoords), (vnrDevicePtr)(_d_values), brickSize.x * brickSize.y * brickSize.z * _nbMaxRequests);
 
             tdns::math::Vector3ui bigBrickSize = _requestHandler->get_big_brick_size();
             tdns::math::Vector3ui bigBrickVoxels;
@@ -632,7 +751,7 @@ namespace gpucache
     inline void CacheManager<T>::create_mask(thrust::device_vector<bool> &mask, CacheDevice<U> &cache)
     {
         // Get the LRU
-        thrust::device_vector<LruContent> &lru = cache.get_lru();
+        static thrust::device_vector<LruContent> &lru = cache.get_lru();
 
         // Get the LRU size
         uint32_t lruSize = static_cast<uint32_t>(lru.size());
@@ -662,6 +781,7 @@ namespace gpucache
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
 #endif
         CUDA_CHECK_KERNEL_ERROR();
+    // printf("-------------Mask complete-------------\n");
     }
 } // namespace gpucache
 } // namespace tdns

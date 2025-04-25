@@ -10,6 +10,8 @@
 #include <GcCore/cuda/libGPUCache/K_MultiResolutionPageDirectory.hpp>
 #include <GcCore/cuda/libGPUCache/K_CacheDevice.hpp>
 
+#include "../../../../../ovr/api.h"
+
 namespace tdns
 {
 namespace gpucache
@@ -25,7 +27,7 @@ namespace gpucache
     * @param mask      [description]
     */
     __global__ void TDNS_API create_usage_mask(uint3 blockSize,
-        LruContent *lru,
+        LruContent* __restrict__ lru,
         size_t lruSize,
         tdns::common::K_DynamicArray3dDevice<uint32_t> usage,
         uint32_t timestamp,
@@ -34,7 +36,7 @@ namespace gpucache
     //---------------------------------------------------------------------------------------------------
     __global__ void TDNS_API coord_1D_to_3D(size_t *indexes,
         size_t nbElements,
-        uint4 *positions,
+        uint4* __restrict__ positions,
         tdns::common::K_DynamicArray3dDevice<uint3> realNumberOfEntries);
 
     //---------------------------------------------------------------------------------------------------
@@ -56,11 +58,15 @@ namespace gpucache
     __global__ void TDNS_API copy_lru_position(LruContent *lruTo, LruContent *lruFrom, size_t size);
 
     //---------------------------------------------------------------------------------------------------
+    __global__ void fillAllCoords(const uint3 brick_size, uint4* __restrict__ requested_bricks, const vnr::vec3f vol_dims, const uint32_t count,
+                                  vnr::vec3f* __restrict__ d_coords, vnr::vec3f* __restrict__ d_outCoords);
+
+    //---------------------------------------------------------------------------------------------------
     template<typename T>
     static __global__ void write_brick(K_CacheDevice<T> dataCache,
-        T *bricks,
+        T* __restrict__ bricks,
         LruContent *position,
-        uint4 *requestedBricks,
+        uint4* __restrict__ requestedBricks,
         uint32_t *bigBrickIndexes,
         uint4 *bigBrickCoords,
         size_t nbBricks,
@@ -117,7 +123,7 @@ namespace gpucache
     {
         uint32_t threadX = blockIdx.x * blockDim.x + threadIdx.x;
 
-        if (threadX > nbBricks) return;
+        if (threadX >= nbBricks) return;
 
         float3 position = positions[threadX].volumePosition;
         if (position.x < 0.f) return; //replace a non mapped brick.(empty place in the LRU)
@@ -142,6 +148,8 @@ namespace gpucache
 
         // For morpho math : reset the entries corresponding to all the voxels of the removed brick in the flag buffer to 0
         manager.reset_data_cache_buffer_entries(level, position);
+
+        // printf("derefPos=(%f, %f, %f) | %u\n", position.x, position.y, position.z, threadX);
     }
 
     //---------------------------------------------------------------------------------------------------
@@ -191,6 +199,7 @@ namespace gpucache
         {
             if (entry.w == 1)
             {
+                if (i >= nbTableCaches) { break; } // TODO not sure if this is the correct fix
                 // printf("MAPPED\n");
                 stack[i].cachePosition = make_uint3(entry.x, entry.y, entry.z);
                 stack[i].level = level;

@@ -48,9 +48,9 @@ namespace common
     template<typename T>
     QueueDevice<T>::~QueueDevice()
     {
-        cudaFree(_data);
-        cudaFree(_begin);
-        cudaFree(_end);
+        CUDA_SAFE_CALL_NOEXCEPT(cudaFree(_data));
+        CUDA_SAFE_CALL_NOEXCEPT(cudaFree(_begin));
+        CUDA_SAFE_CALL_NOEXCEPT(cudaFree(_end));
     }
 
     //---------------------------------------------------------------------------------------------------

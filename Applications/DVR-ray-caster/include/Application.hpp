@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <GcCore/libData/MetaData.hpp>
 
 namespace tdns
@@ -12,6 +13,8 @@ namespace app
     class Application
     {
     public:
+        Application(std::string config) : config(config) {}
+
         /**
         * @brief Initialize the application.
         *
@@ -43,12 +46,13 @@ namespace app
         */
         void pre_process(tdns::data::MetaData &volumeData) const;
 
-        void pre_process_mipmapping(tdns::data::MetaData &volumeData) const;
-
         /**
         */
         void pre_process_bricking(tdns::data::MetaData &volumeData, const std::vector<tdns::math::Vector3ui> &levels) const;
         
+    private:
+        std::string config;
+        mutable std::string dataType;
     };
 } // namespace app
 } // namespace tdns

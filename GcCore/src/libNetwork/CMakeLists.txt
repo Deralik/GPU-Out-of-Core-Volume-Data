@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.8)
 
 # --------------- Project configuration ---------------
 
@@ -9,7 +9,7 @@ project (libNetwork)
 file(GLOB_RECURSE HEADER_FILES "${INCLUDE_PATH}/GcCore/libNetwork/*.hpp")
 file(GLOB_RECURSE SOURCE_FILES "*.cpp")
 
-if (SHARED)
+if (3DNS_BUILD_SHARED_LIBS)
     # Create a shared library named libNetwork
     add_library(Network SHARED 
         ${HEADER_FILES}
@@ -33,3 +33,6 @@ target_link_libraries(Network
 # define an include directory to the Network target
 target_include_directories(Network PRIVATE ${INCLUDE_PATH}/)
 target_include_directories(Network PUBLIC ${INCLUDE_PATH}/)
+
+# add common compile definitions
+target_3dns_definitions(Network)

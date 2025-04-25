@@ -1,13 +1,18 @@
 #include <TransferFunction.hpp>
 
 #include <GcCore/libMath/Vector.hpp>
-#include <algorithm>
-#include <cmath>
+
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <iostream>
-#include <unistd.h>
+
 #include <imgui/imgui.h>
+
+#include <unistd.h>
+
+#include <algorithm>
+#include <cmath>
+#include <iostream>
 
 namespace tdns
 {
@@ -146,7 +151,7 @@ namespace graphics
         ImGuiWindow* window = ImGui::GetCurrentWindow();
 
         // Prepare canvas
-        const float availableWidth = ImGui::GetContentRegionAvailWidth();
+        const float availableWidth = ImGui::GetContentRegionAvail().x;
         // Set the size of the canvas
         const ImVec2 canvas(
             size.x > 0 ? size.x : availableWidth - ImGui::GetStyle().FramePadding.x * 10,
@@ -166,12 +171,11 @@ namespace graphics
 
         ImGui::ItemSize(bb);
         if (!ImGui::ItemAdd(bb, 0)) {
-            ImGui::PopID();
             return 0;
         }
 
         const ImGuiID id = window->GetID("Transfer Function");
-        ImGui::ItemHoverable(bb, id);
+        ImGui::ItemHoverable(bb, id, ImGuiItemFlags_None);
 
         // Draw histogram
         const ImColor histogramColor(.65f, .65f, .65f, .3f);
@@ -216,8 +220,6 @@ namespace graphics
 
         // Draw all the curves
         drawCurve(drawList, bb);
-
-        ImGui::PopID();
 
         if(changed)
             regenerateSamples();

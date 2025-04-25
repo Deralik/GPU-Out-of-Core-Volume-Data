@@ -137,7 +137,7 @@ namespace common
         {
         case DynamicArrayOptions::Options::Pinned:
         case DynamicArrayOptions::Options::Mapped:
-            cudaFreeHost(_data);
+            CUDA_SAFE_CALL_NOEXCEPT(cudaFreeHost(_data));
             break;
         case DynamicArrayOptions::Options::Standard:
             delete[] _data;

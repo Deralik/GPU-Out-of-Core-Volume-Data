@@ -111,10 +111,11 @@ namespace gpucache
         * 
         * @param level    [description]
         * @param position [description]
+        * @param cam_dist
         */
         __device__ void raise_brick_request(uint32_t level, const float3 &position);
 
-    protected:
+    public:
         /*
         * Member data
         */
@@ -217,6 +218,7 @@ namespace gpucache
                                 // << check other levels
                                 if (level < levelMax)
                                 {
+                                    ++level;
                                     checkOtherLevel = true;
                                     break;
                                 }
@@ -285,6 +287,8 @@ namespace gpucache
                 position.z * initialOverReal.z
             );
 
+            // printf("Pos: %f %f %f | IOR: %f %f %f\n ", position.x, position.y, position.z, initialOverReal.x, initialOverReal.y, initialOverReal.z);
+
             float3 virtualPosition = make_float3
             (
                 position_in_real_volume.x * realDivVirtual.x,
@@ -319,6 +323,7 @@ namespace gpucache
                                 // << check other levels
                                 if (level < levelMax)
                                 {
+                                    ++level;
                                     checkOtherLevel = true;
                                     break;
                                 }
@@ -347,10 +352,13 @@ namespace gpucache
                     if (level == levelCurrent) raise_brick_request(level, position_in_real_volume); // 600
                     
                     // << check other levels
-                    // if (level < levelMax) ++level;
-                    // else
-                    output = tdns::common::create_default<U>();
-                    return VoxelStatus::Unmapped;
+                    if (level < levelMax) ++level;
+                    else
+                    {
+                        output = tdns::common::create_default<U>();
+                        return VoxelStatus::Unmapped;
+                    }
+                    break;
                 }
                 case 2: // EMPTY
                 {
@@ -361,6 +369,7 @@ namespace gpucache
     }
 
     //---------------------------------------------------------------------------------------------------
+
     template<typename T>
     inline __device__ void K_CacheManager<T>::raise_brick_request(uint32_t level, const float3 &position)
     {
@@ -388,11 +397,21 @@ namespace gpucache
         // offset on x, according to the level
         coordinates = levelCoordinates(make_uint3(level, 0, 0));
 
-        brickPosition.x = coordinates + static_cast<uint32_t>(position.x * dimensions.x);
-        brickPosition.y = static_cast<uint32_t>(position.y * dimensions.y);
-        brickPosition.z = static_cast<uint32_t>(position.z * dimensions.z);
-        
-        _requestBuffer(brickPosition) = _timeStamp;
+        brickPosition.x = coordinates + std::min(static_cast<uint32_t>(position.x * dimensions.x), dimensions.x - 1);
+        brickPosition.y = std::min(static_cast<uint32_t>(position.y * dimensions.y), dimensions.y - 1);
+        brickPosition.z = std::min(static_cast<uint32_t>(position.z * dimensions.z), dimensions.z - 1);        
+        // if (brickPosition.x >= (dimensions.x + coordinates) || brickPosition.y >= dimensions.y || brickPosition.z >= dimensions.z) {
+        //     printf("brickPosition: %d %d %d (%d %d %d)\n", 
+        //         brickPosition.x, brickPosition.y, brickPosition.z,
+        //         dimensions.x, dimensions.y, dimensions.z
+        //     );
+        // }
+
+        if (_requestBuffer(brickPosition) <= _timeStamp)
+            _requestBuffer(brickPosition) = _timeStamp + 1;
+        else if (_requestBuffer(brickPosition) < _timeStamp + 1000)
+            _requestBuffer(brickPosition)++;
+
     }
 
     //---------------------------------------------------------------------------------------------------
@@ -400,12 +419,17 @@ namespace gpucache
     inline __device__ void K_CacheManager<T>::reset_data_cache_buffer_entries(uint32_t level, const float3 &position)
     {
         uint3 brickPosition = compute_element_position(level, position);
+        uint3 brickDims = _dataCacheMask.dims();
 
         for(uint32_t x = 0; x < _brickSize; ++x)
         for(uint32_t y = 0; y < _brickSize; ++y)
         for(uint32_t z = 0; z < _brickSize; ++z)
         {
-            uint3 position = make_uint3(brickPosition.x + x, brickPosition.y + y, brickPosition.z + z);
+            uint3 position = make_uint3(
+                std::min(brickPosition.x + x, brickDims.x-1), 
+                std::min(brickPosition.y + y, brickDims.y-1), 
+                std::min(brickPosition.z + z, brickDims.z-1)
+            );
             _dataCacheMask(position) = 0;
         }
     }

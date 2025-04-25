@@ -7,6 +7,7 @@
 #include <GcCore/libCommon/CppNorm.hpp>
 #include <GcCore/libMath/Vector.hpp>
 #include <GcCore/libData/MetaData.hpp>
+#include <GcCore/libData/VolumeConfiguration.hpp>
 
 namespace tdns
 {
@@ -22,12 +23,12 @@ namespace preprocessor
         tdns::math::Vector3ui   brickSize;    ///< Size of a brick on all axes.
         uint32_t    encodedBytes;
         uint32_t    numberChannels;
+        tdns::data::DataTypeEnum    dataType; ///< Newly added type identifier
     };
 
-    void TDNS_API process_mipmapping(const MipmappingConfiguration& configuration);
+    // void TDNS_API process_mipmapping(const MipmappingConfiguration& configuration);
 
-    void TDNS_API fill_metaData(std::vector<tdns::math::Vector3ui> &initialLevels, uint32_t levels, tdns::math::Vector3ui dimension, tdns::math::Vector3ui ratioDownScale);
-
+    // void TDNS_API fill_metaData(std::vector<tdns::math::Vector3ui> &initialLevels, uint32_t levels, tdns::math::Vector3ui dimension, tdns::math::Vector3ui ratioDownScale);
 
     /**
     * @brief
@@ -65,6 +66,7 @@ namespace preprocessor
          */
         bool init(  tdns::math::Vector3ui &dimension,
                     tdns::math::Vector3ui &ratioDownScale,
+                    tdns::data::DataTypeEnum &dataType,
                     uint32_t &numberEncodedBytes,
                     uint32_t &numberChannels,
                     std::string &mipmapDirectory);
@@ -86,6 +88,7 @@ namespace preprocessor
                         const uint32_t resY,
                         const uint32_t numberEncodedBytes,
                         const uint32_t numberChannels,
+                        tdns::data::DataTypeEnum dataType,
                         tdns::math::Vector3ui ratioDownScale);
 
         /**

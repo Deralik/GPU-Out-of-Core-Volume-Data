@@ -47,7 +47,12 @@ namespace common
         /**
          * @brief
          */
-        __device__ size_t size();
+        __device__ size_t size() const;
+
+        /**
+         * @brief
+         */
+        __device__ uint3 dims() const;
 
         /**
         * @brief Device operator overload.
@@ -96,29 +101,54 @@ namespace common
     //---------------------------------------------------------------------------------------------------
     template<typename T>
     inline __device__
-     size_t K_DynamicArray3dDevice<T>::size()
-     {
-         return static_cast<size_t>(_size.x) * static_cast<size_t>(_size.y) * static_cast<size_t>(_size.z);
-     }
+    size_t K_DynamicArray3dDevice<T>::size() const
+    {
+        return static_cast<size_t>(_size.x) * static_cast<size_t>(_size.y) * static_cast<size_t>(_size.z);
+    }
 
     //---------------------------------------------------------------------------------------------------
     template<typename T>
     inline __device__
-    T& K_DynamicArray3dDevice<T>::operator [] (const size_t position)
-    { return _data[position]; }
+    uint3 K_DynamicArray3dDevice<T>::dims() const
+    {
+        return _size;
+    }
 
     //---------------------------------------------------------------------------------------------------
     template<typename T>
     inline __device__
-    const T& K_DynamicArray3dDevice<T>::operator [] (const size_t position) const
-    { return _data[position]; }
+    T& K_DynamicArray3dDevice<T>::operator [] (const size_t idx)
+    { 
+#if TDNS_MODE == TDNS_MODE_DEBUG
+        const size_t len = size();
+        if (idx >= len) { printf("[K_DArray3D[size_t]] Index (%d) Out-of-Bound (%d)\n", (uint32_t)idx, (uint32_t)len); asm("trap;"); }
+#endif
+        return _data[idx]; 
+    }
+
+    //---------------------------------------------------------------------------------------------------
+    template<typename T>
+    inline __device__
+    const T& K_DynamicArray3dDevice<T>::operator [] (const size_t idx) const
+    {
+#if TDNS_MODE == TDNS_MODE_DEBUG
+        const size_t len = size();
+        if (idx >= len) { printf("[K_DArray3D[size_t]] Index (%d) Out-of-Bound (%d)\n", (uint32_t)idx, (uint32_t)len); asm("trap;"); }
+#endif
+        return _data[idx]; 
+    }
 
     //---------------------------------------------------------------------------------------------------
     template<typename T>
     inline __device__
     T& K_DynamicArray3dDevice<T>::operator () (const uint3 &position)
     {
-        return _data[position.x + position.y * _size.x + position.z * _xyProduct];
+        const size_t idx = static_cast<size_t>(position.x) + static_cast<size_t>(position.y) * _size.x + static_cast<size_t>(position.z) * _xyProduct;
+#if TDNS_MODE == TDNS_MODE_DEBUG
+        const size_t len = size();
+        if (idx >= len) { printf("[K_DArray3D(uint3)] Index (%d) Out-of-Bound (%d)\n", (uint32_t)idx, (uint32_t)len); asm("trap;"); }
+#endif
+        return _data[idx];
     }
 
     //---------------------------------------------------------------------------------------------------
@@ -126,7 +156,12 @@ namespace common
     inline __device__
     const T& K_DynamicArray3dDevice<T>::operator () (const uint3 &position) const
     {
-        return _data[position.x + position.y * _size.x + position.z * _xyProduct];
+        const size_t idx = static_cast<size_t>(position.x) + static_cast<size_t>(position.y) * _size.x + static_cast<size_t>(position.z) * _xyProduct;
+#if TDNS_MODE == TDNS_MODE_DEBUG
+        const size_t len = size();
+        if (idx >= len) { printf("[K_DArray3D(uint3)] Index (%d) Out-of-Bound (%d)\n", (uint32_t)idx, (uint32_t)len); asm("trap;"); }
+#endif
+        return _data[idx];
     }
 
     //---------------------------------------------------------------------------------------------------
@@ -134,7 +169,12 @@ namespace common
     inline __device__
     T& K_DynamicArray3dDevice<T>::operator () (const size_t x, const size_t y, const size_t z)
     {
-        return _data[x + y * _size.x + z * _xyProduct];
+        const size_t idx = x + y * _size.x + z * _xyProduct;
+#if TDNS_MODE == TDNS_MODE_DEBUG
+        const size_t len = size();
+        if (idx >= len) { printf("[K_DArray3D(int,int,int)] Index (%d) Out-of-Bound (%d)\n", (uint32_t)idx, (uint32_t)len); asm("trap;"); }
+#endif
+        return _data[idx];
     }
 
     //---------------------------------------------------------------------------------------------------
@@ -142,7 +182,12 @@ namespace common
     inline __device__
     const T& K_DynamicArray3dDevice<T>::operator () (const size_t x, const size_t y, const size_t z) const
     {
-        return _data[x + y * _size.x + z * _xyProduct];
+        const size_t idx = x + y * _size.x + z * _xyProduct;
+#if TDNS_MODE == TDNS_MODE_DEBUG
+        const size_t len = size();
+        if (idx >= len) { printf("[K_DArray3D(int,int,int)] Index (%d) Out-of-Bound (%d)\n", (uint32_t)idx, (uint32_t)len); asm("trap;"); }
+#endif
+        return _data[idx];
     }
 } // namespace tdns
 } // namespace common

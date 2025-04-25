@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.8)
 
 # --------------- Project configuration ---------------
 
@@ -7,9 +7,9 @@ project (libData)
 # --------------- Library configuration ---------------
 
 file(GLOB_RECURSE HEADER_FILES "${INCLUDE_PATH}/GcCore/libData/*.hpp")
-file(GLOB_RECURSE SOURCE_FILES "*.cpp")
+file(GLOB_RECURSE SOURCE_FILES "*.cpp" "*.cu")
 
-if (SHARED)
+if (3DNS_BUILD_SHARED_LIBS)
     # Create a shared library named libData
     add_library(Data SHARED 
         ${HEADER_FILES}
@@ -35,4 +35,5 @@ target_link_libraries(Data
 target_include_directories(Data PRIVATE ${INCLUDE_PATH}/)
 target_include_directories(Data PUBLIC ${INCLUDE_PATH}/)
 
-#target_compile_features(Data PUBLIC x);
+# add common compile definitions
+target_3dns_definitions(Data)

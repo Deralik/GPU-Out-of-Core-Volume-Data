@@ -25,7 +25,7 @@ namespace app
         tdns::data::Configuration &conf = tdns::data::Configuration::get_instance();
 
         // Load configuration file
-        conf.load<tdns::data::TDNSConfigurationParser>("config/config_skull.cfg");
+        conf.load<tdns::data::TDNSConfigurationParser>(config);
 
         if (!data_folder_check())
             return false;
@@ -36,6 +36,12 @@ namespace app
         conf.get_field("WorkingDirectory", workingDirectory);
         std::string volumeDirectory = workingDirectory + tdns::common::get_file_base_name(fileName) + "/";
         conf.add_field("VolumeDirectory", volumeDirectory);
+
+        // Get the data type of the volume to visualize
+        if (!conf.get_field("DataType", dataType)) {
+            LOGERROR(20, "Unable to get the DataType from configuration file.");
+            throw std::runtime_error("Unable to get the DataType from configuration file.");
+        }
 
         return true;
     }
@@ -71,7 +77,7 @@ namespace app
 
         // Determine the configuration file of the volume(s) to visualize
         std::vector<tdns::data::VolumeConfiguration> volumeConfigurations(1); // only one volume here
-        volumeConfigurations[0] = tdns::data::load_volume_configuration("config/config_skull.cfg");
+        volumeConfigurations[0] = tdns::data::load_volume_configuration(config);
 
         // Cache configuration (size) 
         // (here we use only one level of pagination)
@@ -81,19 +87,37 @@ namespace app
         // (Must be adapted to bricks size, voxels encoding type AND GPU available memory!).
         // (If it's too large, it will cause an [out of memory] error. If it's too small, the cache will fill up quickly and performance will suffer!)
 
-
         // Create the GPU Cache Manager
-        std::unique_ptr<tdns::gpucache::CacheManager<uchar1>> cacheManager;
         tdns::data::CacheConfiguration cacheConfiguration;
         cacheConfiguration.CacheSize = cacheSize;
         cacheConfiguration.BlockSize = blockSize;
         cacheConfiguration.DataCacheFlags = 1;  // normalized access or not in GPU texture memory
-        cacheManager = tdns::common::create_unique_ptr<tdns::gpucache::CacheManager<uchar1>>(volumeConfigurations[0], cacheConfiguration, gpuID);
 
         //===================================================================================================
         // Exemple application to use GcCore : GPU DVR ray-caster
         //===================================================================================================
-        tdns::graphics::display_volume_raycaster(cacheManager.get(), volumeData);
+
+        auto dtype = tdns::data::getDataTypeEnum(dataType);
+
+#define CALL_APP(TYPE)                                                          \
+        {                                                                       \
+            auto* cacheManager = new tdns::gpucache::CacheManager<TYPE>         \
+                (volumeConfigurations[0], cacheConfiguration, gpuID);           \
+            tdns::graphics::display_volume_raycaster(cacheManager, volumeData); \
+            delete cacheManager;                                                \
+        }
+
+        if      (dtype == tdns::data::TYPE_UCHAR)  CALL_APP(uchar1)
+        else if (dtype == tdns::data::TYPE_USHORT) CALL_APP(ushort1)
+        else if (dtype == tdns::data::TYPE_UINT)   CALL_APP(uint1)
+        else if (dtype == tdns::data::TYPE_CHAR)   CALL_APP(char1)
+        else if (dtype == tdns::data::TYPE_SHORT)  CALL_APP(short1)
+        else if (dtype == tdns::data::TYPE_INT)    CALL_APP(int1)
+        else if (dtype == tdns::data::TYPE_FLOAT)  CALL_APP(float1)
+        // else if (dtype == tdns::data::TYPE_DOUBLE) CALL_APP(double1)
+        else throw std::runtime_error("Unsupported data type: " + std::to_string(dtype));
+
+        // CUDA_SYNC_CHECK();
     }
 
     //---------------------------------------------------------------------------------------------
@@ -113,6 +137,22 @@ namespace app
     }
 
     //---------------------------------------------------------------------------------------------
+    template<typename DataType>
+    void pre_process_empty_and_histogram(tdns::data::MetaData &volumeData, double threshold)
+    {
+        tdns::preprocessor::BrickProcessor<DataType> brickProcessor(volumeData);
+        // // Process volume histogram
+        // brickProcessor.process_histo();
+        // Process empty bricks
+        void *d_threshold; 
+        DataType h_threshold;
+        h_threshold.x = threshold;
+        CUDA_SAFE_CALL(cudaMalloc(&d_threshold, sizeof(h_threshold.x)));
+        CUDA_SAFE_CALL(cudaMemcpy(d_threshold, &h_threshold.x, sizeof(h_threshold.x), cudaMemcpyHostToDevice));
+        brickProcessor.template process_empty<tdns::preprocessor::BrickProcessorGenericPredicate_1<DataType>>(d_threshold);
+        CUDA_SAFE_CALL(cudaFree(d_threshold));
+    }
+
     void Application::pre_process(tdns::data::MetaData &volumeData) const
     {
         std::cout << "Start pre-processing (see log file) ..." << std::endl;
@@ -126,51 +166,18 @@ namespace app
         pre_process_bricking(volumeData, levels);
 
         // PROCESS EMPTY BRICKS AND VOLUME HISTOGRAM
-        // ========================= UCHAR1 =========================
-        tdns::preprocessor::BrickProcessor<uchar1> brickProcessor(volumeData);
-        // Process volume histogram
-        brickProcessor.process_histo();
-        // Process empty bricks
-        uint32_t *d_threshold;
-        uint32_t threshold = 10;
-        CUDA_SAFE_CALL(cudaMalloc(&d_threshold, sizeof(uint32_t)));
-        CUDA_SAFE_CALL(cudaMemcpy(d_threshold, &threshold, sizeof(uint32_t), cudaMemcpyHostToDevice));
-        brickProcessor.process_empty<tdns::preprocessor::DefaultBrickProcessorPredicate>(d_threshold);
-
+        auto dtype = tdns::data::getDataTypeEnum(dataType);
+        double threshold = 0.0; // TODO: get from config file
+        if      (dtype == tdns::data::TYPE_UCHAR)  pre_process_empty_and_histogram<uchar1>(volumeData, threshold);
+        else if (dtype == tdns::data::TYPE_USHORT) pre_process_empty_and_histogram<ushort1>(volumeData, threshold);
+        else if (dtype == tdns::data::TYPE_UINT)   pre_process_empty_and_histogram<uint1>(volumeData, threshold);
+        else if (dtype == tdns::data::TYPE_CHAR)   pre_process_empty_and_histogram<char1>(volumeData, threshold);
+        else if (dtype == tdns::data::TYPE_SHORT)  pre_process_empty_and_histogram<short1>(volumeData, threshold);
+        else if (dtype == tdns::data::TYPE_INT)    pre_process_empty_and_histogram<int1>(volumeData, threshold);
+        else if (dtype == tdns::data::TYPE_FLOAT)  pre_process_empty_and_histogram<float1>(volumeData, threshold);
+        else if (dtype == tdns::data::TYPE_DOUBLE) pre_process_empty_and_histogram<double1>(volumeData, threshold);
+        else throw std::runtime_error("Unsupported data type: " + std::to_string(dtype));
         volumeData.write_bricks_xml();
-    }
-
-    //---------------------------------------------------------------------------------------------
-    void Application::pre_process_mipmapping(tdns::data::MetaData &volumeData) const
-    {
-        tdns::preprocessor::MipmappingConfiguration configuration;
-        tdns::data::Configuration &conf = tdns::data::Configuration::get_instance();
-
-        //Volumedirectory
-        conf.get_field("VolumeDirectory", configuration.volumeDirectory);
-        //volume file name
-        conf.get_field("VolumeFile", configuration.volumeFileName);
-        //Outputdirectory
-        conf.get_field("VolumeDirectory", configuration.outputDirectory);
-        //Level dimensions
-        conf.get_field("size_X", configuration.levelDimension[0]);
-        conf.get_field("size_Y", configuration.levelDimension[1]);
-        conf.get_field("size_Z", configuration.levelDimension[2]);
-        //Down sampling ratios
-        conf.get_field("downScale_X", configuration.downScaleRatio[0]);
-        conf.get_field("downScale_Y", configuration.downScaleRatio[1]);
-        conf.get_field("downScale_Z", configuration.downScaleRatio[2]);
-        //brick Size
-        uint32_t brickSize;
-        conf.get_field("BrickSize", brickSize);
-        configuration.brickSize = tdns::math::Vector3ui(brickSize);
-        //EncodedByte
-        conf.get_field("NumberEncodedBytes", configuration.encodedBytes);
-        //Number of channels
-        conf.get_field("NumberChannels", configuration.numberChannels);
-
-        tdns::preprocessor::process_mipmapping(configuration);
-        tdns::preprocessor::fill_metaData(volumeData.get_initial_levels(), volumeData.nb_levels(), configuration.levelDimension, configuration.downScaleRatio);
     }
 
     //---------------------------------------------------------------------------------------------

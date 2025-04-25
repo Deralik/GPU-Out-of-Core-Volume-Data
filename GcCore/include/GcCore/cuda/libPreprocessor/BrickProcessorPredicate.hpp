@@ -32,6 +32,30 @@ namespace preprocessor
         }
     };
 
+    struct BrickProcessor32BitsPredicate
+    {
+        /**
+        * @brief Default predicate. If the value of the current voxel is
+        *        under a threshold, it is considered as an empty voxel.
+        */
+        __device__ static bool predicate(uint1 voxel, void *otherData)
+        {
+            return voxel.x < *reinterpret_cast<uint32_t*>(otherData) ? true : false;
+        }
+    };
+
+    struct BrickProcessorFloatPredicate
+    {
+        /**
+        * @brief Default predicate. If the value of the current voxel is
+        *        under a threshold, it is considered as an empty voxel.
+        */
+        __device__ static bool predicate(float1 voxel, void *otherData)
+        {
+            return voxel.x < *reinterpret_cast<float*>(otherData) ? true : false;
+        }
+    };
+
     struct ProcessorUchar4Predicate
     {
         /**
@@ -56,6 +80,19 @@ namespace preprocessor
             }
 
             return false;
+        }
+    };
+
+    template<typename Type>
+    struct BrickProcessorGenericPredicate_1
+    {
+        /**
+        * @brief Default predicate. If the value of the current voxel is
+        *        under a threshold, it is considered as an empty voxel.
+        */
+        __device__ static bool predicate(Type voxel, void *otherData)
+        {
+            return voxel.x < *reinterpret_cast<decltype(voxel.x)*>(otherData) ? true : false;
         }
     };
 

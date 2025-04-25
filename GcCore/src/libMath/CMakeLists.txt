@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.8)
 
 # --------------- Project configuration ---------------
 
@@ -9,7 +9,7 @@ project (libMath)
 file(GLOB_RECURSE HEADER_FILES "${INCLUDE_PATH}/GcCore/libMath/*.hpp")
 file(GLOB_RECURSE SOURCE_FILES "*.cpp")
 
-if (SHARED)
+if (3DNS_BUILD_SHARED_LIBS)
     # Create a shared library named libMath
     add_library(Math SHARED 
         ${HEADER_FILES}
@@ -27,4 +27,5 @@ endif()
 target_include_directories(Math PRIVATE ${INCLUDE_PATH}/)
 target_include_directories(Math PUBLIC ${INCLUDE_PATH}/)
 
-#target_compile_features(Math PUBLIC x);
+# add common compile definitions
+target_3dns_definitions(Math)

@@ -834,3 +834,7 @@ namespace glm
 #elif GLM_SETUP_INCLUDED == GLM_VERSION
 
 #endif//GLM_SETUP_INCLUDED
+
+#ifdef __NVCC__
+#pragma nv_diag_suppress 20012
+#endif

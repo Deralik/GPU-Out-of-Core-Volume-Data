@@ -95,7 +95,7 @@ namespace common
             std::pair<Key, Value> pair = *it;
             _values.erase(it);
             _values.insert(pair);
-            return --_values.end();
+            return _values.end();
         }
 
         /**

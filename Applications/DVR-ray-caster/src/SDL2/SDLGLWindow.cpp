@@ -80,5 +80,12 @@ namespace graphics
     {
         return _window;
     }
+
+    //---------------------------------------------------------------------------------------------------
+    SDL_GLContext SDLGLWindow::get_gl_context()
+    {
+        return _glContext;
+    }
+
 } // namespace graphics
 } // namespace tdns

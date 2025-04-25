@@ -13,6 +13,9 @@
 #include <GcCore/libData/BrickKey.hpp>
 #include <GcCore/libData/MetaData.hpp>
 
+#include <GcCore/libData/Configuration.hpp>
+#include "../../../../../ovr/api.h"
+
 namespace tdns
 {
 namespace data
@@ -71,7 +74,8 @@ namespace data
         *
         * @return The status of the brick.
         */
-        BrickStatus get_brick(uint32_t level, const tdns::math::Vector3ui &position, Brick **brick);
+        BrickStatus get_brick(uint32_t level, const tdns::math::Vector3ui &position, Brick **brick, uint32_t i);
+        void get_bricks(uint32_t* levels, tdns::math::Vector3ui* positions, Brick** bricks, BrickStatus* statusArr, const uint32_t count);
 
         /**
         * @brief Write a brick in a file.
@@ -155,21 +159,28 @@ namespace data
         *
         *
         */
-        Brick* load_brick(Bkey key, uint32_t level, const tdns::math::Vector3ui &position);
+        Brick* load_brick(Bkey key, uint32_t level, const tdns::math::Vector3ui &position, const uint32_t i);
+        void load_bricks(Bkey* keys, uint32_t* levels, tdns::math::Vector3ui* positions, Brick** bricks, const uint32_t count);
 
-    protected:
+    public:
         /**
         * Member data
         */
-        tdns::math::Vector3ui                   _brickEdgeSize;         ///< Edge size of a brick.
-        tdns::math::Vector3ui                   _bigBrickSize;          ///< Number of bricks inside a big brick.
-        uint32_t                                _numberEncodedBytes;    ///< Number of bytes used to encode each voxel.
-        std::string                             _volumeDirectory;       ///< Directory where the volume is.
+        tdns::math::Vector3ui                       _brickEdgeSize;         ///< Edge size of a brick.
+        tdns::math::Vector3ui                       _bigBrickSize;          ///< Number of bricks inside a big brick.
+        uint32_t                                    _numberEncodedBytes;    ///< Number of bytes used to encode each voxel.
+        std::string                                 _INRpath;               ///< Path to the model params.json
 
-        std::map<Bkey, std::unique_ptr<Brick>>  _bricks;                ///< Cache of brick to store it when loaded from HD.
-        std::set<Bkey>                          _emptyBricks;           ///< List of empty bricks.
-        tdns::common::LRUCache<Bkey, Brick*>    _cache;                 ///< LRU cache to know which brick to release if not used.
-        std::mutex                              _lock;
+        std::map<Bkey, std::unique_ptr<Brick>>      _bricks;                ///< Cache of brick to store it when loaded from HD.
+        std::set<Bkey>                              _emptyBricks;           ///< List of empty bricks.
+        tdns::common::LRUCache<Bkey, Brick*>        _cache;                 ///< LRU cache to know which brick to release if not used.
+        std::mutex                                  _lock;
+
+        vnrNetwork                                  _net;                   ///< Injected model network
+        vnr::vec3f                                  _volDims;               ///< Volume dims for coordinate normalization
+        vnr::vec3f*                                 _d_coords;              ///< Coordinates to be offset for VNR on Device
+        vnr::vec3f*                                 _d_outCoords;           ///< Coordinates for inference
+        float*                                      _d_values;              ///< Output values from network
     };
 } //namespace data
 } //namespace tdns

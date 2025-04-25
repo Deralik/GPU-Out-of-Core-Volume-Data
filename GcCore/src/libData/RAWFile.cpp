@@ -11,8 +11,9 @@ namespace tdns
 namespace data
 {
     //---------------------------------------------------------------------------------------------------
-    RAWFile::RAWFile(const std::string &filePath) : AbstractFile(filePath)
-    {}
+    RAWFile::RAWFile(const std::string &filePath, bool readonly) : AbstractFile(filePath), readonly(readonly)
+    {
+    }
 
     //---------------------------------------------------------------------------------------------------
     RAWFile::~RAWFile()
@@ -27,7 +28,10 @@ namespace data
         if (!tdns::common::exists(_filePath))
             tdns::common::create_file(_filePath);
 
-        _fileStream.open(_filePath, std::fstream::in | std::fstream::out | std::fstream::binary);
+        if (readonly)
+            _fileStream.open(_filePath, std::fstream::in | std::fstream::binary);
+        else
+            _fileStream.open(_filePath, std::fstream::in | std::fstream::out | std::fstream::binary);
     }
 
     //---------------------------------------------------------------------------------------------------
@@ -46,6 +50,10 @@ namespace data
         }
 
         _fileStream.read(reinterpret_cast<char*>(buffer), size);
+        if (!_fileStream && (_fileStream.gcount() != size))
+        {
+            throw std::runtime_error("error: only " +  std::to_string(_fileStream.gcount()) + " could be read");
+        }
 
         return true;
     }
@@ -53,6 +61,12 @@ namespace data
     //---------------------------------------------------------------------------------------------------
     bool RAWFile::write(uint8_t *data, uint32_t size)
     {
+        if (readonly)
+        {
+            LOGERROR(10, "Cannot write in the file ! File is opened in read only mode.");
+            return false;
+        }
+
         if (!_fileStream.is_open())
         {
             LOGERROR(10, "Cannot write in the file ! File is not opened.");
@@ -95,7 +109,7 @@ namespace data
     //---------------------------------------------------------------------------------------------------
     std::unique_ptr<RAWFile> RAWFile::create_instance(const std::string &filePath)
     {
-        return tdns::common::create_unique_ptr<RAWFile>(filePath);
+        return tdns::common::create_unique_ptr<RAWFile>(filePath, true);
     }
 
 } //namespace data

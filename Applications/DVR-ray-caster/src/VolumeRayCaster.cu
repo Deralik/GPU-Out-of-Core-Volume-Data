@@ -18,7 +18,10 @@
 #include <Display_helper.hpp>
 #include <Camera.hpp>
 #include <RayCasters_helpers.hpp>
-#include <imgui/imgui_impl_sdl_gl3.h>
+
+#include <imgui/imgui.h>
+#include <imgui/imgui_impl_sdl2.h>
+#include <imgui/imgui_impl_opengl3.h>
 
 #include <SDL2/SDLHelper.hpp>
 
@@ -57,7 +60,8 @@ namespace graphics
                     float *d_LODStepSize);
 
     //---------------------------------------------------------------------------------------------
-    void display_volume_raycaster(tdns::gpucache::CacheManager<uchar1> *manager, tdns::data::MetaData &volumeData)
+    template<typename T>
+    void display_volume_raycaster(tdns::gpucache::CacheManager<T> *manager, tdns::data::MetaData &volumeData)
     {
         // Get the needed fiel in the configuration file
         tdns::data::Configuration &conf = tdns::data::Configuration::get_instance();
@@ -71,6 +75,36 @@ namespace graphics
         
         // Init SDL
         create_sdl_context(SDL_INIT_EVERYTHING);
+
+        // Decide GL+GLSL versions
+#if defined(IMGUI_IMPL_OPENGL_ES2)
+        // GL ES 2.0 + GLSL 100
+        const char* glsl_version = "#version 100";
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#elif defined(__APPLE__)
+        // GL 3.2 Core + GLSL 150
+        const char* glsl_version = "#version 150";
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+#else
+        // GL 3.0 + GLSL 130
+        const char* glsl_version = "#version 130";
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
+
+        // From 2.0.18: Enable native IME.
+#ifdef SDL_HINT_IME_SHOW_UI
+        SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
+#endif
+
         SDLGLWindow sdlWindow("3DNS", SDL_WINDOWPOS_UNDEFINED, 100, screenSize[0], screenSize[1], SDL_WINDOW_RESIZABLE);
         
         // Init GLEW
@@ -83,10 +117,14 @@ namespace graphics
         glViewport(0, 0, screenSize[0], screenSize[1]);
 
         // Init ImGui
+        IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO(); (void)io;
-        ImGui_ImplSdlGL3_Init(sdlWindow.get_window());
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
         ImGui::StyleColorsDark();
+        ImGui_ImplSDL2_InitForOpenGL(sdlWindow.get_window(), NULL);
+        ImGui_ImplOpenGL3_Init(glsl_version);
 
         // Init GLSL shader
         Shader shader("shaders/shader.vs", "shaders/shader.fs");
@@ -143,6 +181,15 @@ namespace graphics
         /*********************** CALL THE DISPLAY FUNCTION ***********************/
         display(sdlWindow, shader, screenSize, bboxmin, bboxmax, marchingStep, tf, volumeData, manager, d_levelsSize, d_invLevelsSize, d_LODBrickSize, d_LODStepSize, histo);
     }
+
+    template  void display_volume_raycaster(tdns::gpucache::CacheManager<uchar1>  *manager, tdns::data::MetaData &volumeData);
+    template  void display_volume_raycaster(tdns::gpucache::CacheManager<ushort1> *manager, tdns::data::MetaData &volumeData);
+    template  void display_volume_raycaster(tdns::gpucache::CacheManager<uint1>   *manager, tdns::data::MetaData &volumeData);
+    template  void display_volume_raycaster(tdns::gpucache::CacheManager<char1>   *manager, tdns::data::MetaData &volumeData);
+    template  void display_volume_raycaster(tdns::gpucache::CacheManager<short1>  *manager, tdns::data::MetaData &volumeData);
+    template  void display_volume_raycaster(tdns::gpucache::CacheManager<int1>    *manager, tdns::data::MetaData &volumeData);
+    template  void display_volume_raycaster(tdns::gpucache::CacheManager<float1>  *manager, tdns::data::MetaData &volumeData);
+    // template  void display_volume_raycaster(tdns::gpucache::CacheManager<double1> *manager, tdns::data::MetaData &volumeData);
 
     //---------------------------------------------------------------------------------------------
     template<typename T>
@@ -277,7 +324,8 @@ namespace graphics
         CUDA_SAFE_CALL(cudaFree(d_LODBrickSize));
         CUDA_SAFE_CALL(cudaFree(d_LODStepSize));
 
-        ImGui_ImplSdlGL3_Shutdown();
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplSDL2_Shutdown();
         ImGui::DestroyContext();
 
         quit_sdl();

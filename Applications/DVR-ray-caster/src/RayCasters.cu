@@ -7,7 +7,18 @@ namespace tdns
 {
 namespace graphics
 {
+    __constant__ float4x3 d_invModelViewMatrix;  // inverse model*view matrix
+
     //---------------------------------------------------------------------------------------------
+    __device__ float3   TDNS_API operator*(float* matrix, float3 v);
+    __device__ float3   TDNS_API mul(const float4x3 &M, const float3 &v);
+    __device__ float4   TDNS_API mul(const float4x3 &M, const float4 &v);
+    __device__ int      TDNS_API intersectBox(float3 p, float3 d, float3 boxmin, float3 boxmax, float *tnear, float *tfar);
+    __device__ uint32_t TDNS_API rgbaFloatToInt(float4 &rgba);
+    __device__ uint32_t TDNS_API compute_LOD(float voxelDistance, uint32_t levelMax, uint3 *levelsSize, float3 *LODBrickSize);    
+    __device__ void     TDNS_API print_bb_edges(const float3 &bboxMin, const float3 &bboxMax, const float3 &position, float4 &color);
+
+    template <typename T>
     __global__ void RayCast(uint32_t *pixelBuffer,
                             cudaTextureObject_t tfTex,
                             uint2 screenSize,
@@ -15,7 +26,7 @@ namespace graphics
                             float fov,
                             float3 bboxMin, float3 bboxMax,
                             int32_t steps, float tstep,
-                            tdns::gpucache::K_CacheManager<uchar1> manager,
+                            tdns::gpucache::K_CacheManager<T> manager,
                             float3 *invLevelsSize,
                             uint3 *levelsSize,
                             float3 *LODBrickSize,
@@ -76,7 +87,7 @@ namespace graphics
                 // sampling
                 normalizedPosition = clamp(texturePosition, 0.f, 0.99f);
                 uint32_t lod = compute_LOD(t, 4, levelsSize, LODBrickSize);
-                tdns::gpucache::VoxelStatus voxelStatus = manager.get_normalized<float>(lod, normalizedPosition, sample);
+                tdns::gpucache::VoxelStatus voxelStatus = manager.template get_normalized<float>(lod, normalizedPosition, sample);
 
                 // Handle Unmapped and Empty bricks
                 if (voxelStatus == tdns::gpucache::VoxelStatus::Empty || voxelStatus == tdns::gpucache::VoxelStatus::Unmapped)
@@ -126,6 +137,7 @@ namespace graphics
     }
 
     //---------------------------------------------------------------------------------------------
+    template <>
     __global__ void RayCast(uint32_t *pixelBuffer,
                             cudaTextureObject_t tfTex,
                             uint2 screenSize,
@@ -248,6 +260,7 @@ namespace graphics
     }
 
     //---------------------------------------------------------------------------------------------
+    template <>
     __global__ void RayCast(uint32_t *pixelBuffer,
                             cudaTextureObject_t tfTex,
                             uint2 screenSize,
@@ -361,7 +374,27 @@ namespace graphics
         uint32_t i = y * screenSize.x + x;
         pixelBuffer[i] = rgbaFloatToInt(finalColor);
     }
-    
+
+    //---------------------------------------------------------------------------------------------
+    template <typename T>
+    void declare_RayCast(tdns::gpucache::K_CacheManager<T> manager) 
+    {
+        throw std::runtime_error("should never be called");
+        dim3 gridDim;
+        dim3 blockDim;
+        RayCast<T><<<gridDim, blockDim>>>(
+            nullptr, cudaTextureObject_t{}, uint2{}, 0, 0.f, float3{}, float3{}, 0, 0.f, 
+            manager, nullptr, nullptr, nullptr, nullptr, 0);
+    }
+    template void declare_RayCast(tdns::gpucache::K_CacheManager<uchar1>  manager);
+    template void declare_RayCast(tdns::gpucache::K_CacheManager<ushort1> manager);
+    template void declare_RayCast(tdns::gpucache::K_CacheManager<uint1>   manager);
+    template void declare_RayCast(tdns::gpucache::K_CacheManager<char1>   manager);
+    template void declare_RayCast(tdns::gpucache::K_CacheManager<short1>  manager);
+    template void declare_RayCast(tdns::gpucache::K_CacheManager<int1>    manager);
+    template void declare_RayCast(tdns::gpucache::K_CacheManager<float1>  manager);
+    template void declare_RayCast(tdns::gpucache::K_CacheManager<double1> manager);
+
     // DEVICE FUNC
 
     //---------------------------------------------------------------------------------------------

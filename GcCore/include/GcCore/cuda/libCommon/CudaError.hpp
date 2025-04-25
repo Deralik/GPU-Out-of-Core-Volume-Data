@@ -26,14 +26,24 @@ namespace common
         if (status != cudaSuccess)                                      \
         {                                                               \
             std::stringstream error;                                    \
-            error << "CUDA error : file \"" << __FILE__                 \
-            << "\" - line \"" << std::to_string(__LINE__)               \
+            error << "CUDA error (file \"" << __FILE__                  \
+            << "\": line " << std::to_string(__LINE__)                  \
             << " - error = [" << cudaGetErrorString(status) << "].";    \
             throw std::runtime_error(error.str().c_str());              \
         }                                                               \
     } while(false)
+#define CUDA_SAFE_CALL_NOEXCEPT(status) do                              \
+    {                                                                   \
+        if (status != cudaSuccess)                                      \
+        {                                                               \
+            std::cerr << "CUDA error (file \"" << __FILE__              \
+            << "\": line " << std::to_string(__LINE__)                  \
+            << " - error = [" << cudaGetErrorString(status) << "].";    \
+        }                                                               \
+    } while(false)
 #else
 #define CUDA_SAFE_CALL(status) do { } while(false)
+#define CUDA_SAFE_CALL_NOEXCEPT(status) do { } while(false)
 #endif
 
     /**
@@ -49,8 +59,8 @@ namespace common
         if (cuError != cudaSuccess)                                     \
         {                                                               \
             std::stringstream error;                                    \
-            error << "CUDA kernel error : file \"" << __FILE__          \
-            << "\" - line \"" << std::to_string(__LINE__)               \
+            error << "CUDA error (file \"" << __FILE__                  \
+            << "\": line " << std::to_string(__LINE__)                  \
             << " - error = [" << cudaGetErrorString(cuError) << "].";   \
             throw std::runtime_error(error.str().c_str());              \
         }                                                               \

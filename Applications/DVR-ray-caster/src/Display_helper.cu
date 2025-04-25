@@ -1,17 +1,18 @@
 #include <Display_helper.hpp>
 
-#include <iostream>
-#include <fstream>
-#include <vector>
+#include <GcCore/cuda/libCommon/CudaError.hpp>
 
-// GLM
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include <GcCore/cuda/libCommon/CudaError.hpp>
+#include <imgui/imgui.h>
+#include <imgui/imgui_impl_sdl2.h>
+#include <imgui/imgui_impl_opengl3.h>
 
-#include <imgui/imgui_impl_sdl_gl3.h>
+#include <iostream>
+#include <fstream>
+#include <vector>
 
 namespace tdns
 {
@@ -120,7 +121,9 @@ namespace graphics
     //---------------------------------------------------------------------------------------------
     bool render_gui(SDLGLWindow &sdlWindow, ImVec4 &clear_color, tdns::math::Vector3f &bboxmin, tdns::math::Vector3f &bboxmax, const std::vector<float> &histo, size_t histoSize, TransferFunction &tf)
     {
-        ImGui_ImplSdlGL3_NewFrame(sdlWindow.get_window());
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+        ImGui::NewFrame();
 
         ImGui::Begin("Params");
         ImGui::SetWindowSize({400,700}, ImGuiCond_FirstUseEver);
@@ -140,7 +143,7 @@ namespace graphics
 
         // imgui render
         ImGui::Render();
-        ImGui_ImplSdlGL3_RenderDrawData(ImGui::GetDrawData());
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         return crop;
     }
 
@@ -154,9 +157,9 @@ namespace graphics
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
-            if (ImGui::IsMouseHoveringAnyWindow() || ImGui::GetIO().WantCaptureMouse)
+            if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) || ImGui::GetIO().WantCaptureMouse)
             {
-                ImGui_ImplSdlGL3_ProcessEvent(&event);
+                ImGui_ImplSDL2_ProcessEvent(&event);
                 return false;
             }
 

@@ -26,6 +26,7 @@ namespace preprocessor
     //---------------------------------------------------------------------------------------------------
     //---------------------------------------------------------------------------------------------------
     //---------------------------------------------------------------------------------------------------
+    template<typename T>
     __global__ void down_sampling(uint8_t *input,
         uint8_t *output,
         const uint32_t inputWidth,
@@ -59,57 +60,37 @@ namespace preprocessor
         const uint32_t inputYIndexStart = outputYIndex * pixelGroupSize.y;
         const uint32_t inputYIndexEnd = inputYIndexStart + pixelGroupSize.y;
 
-        // if (numberChannels == 1 && numberEncodedBytes > 1)
-        // {
-        //     double channelSum;
-        //     T *ptrInput = reinterpret_cast<T*>(input);
-        //     T *ptrOutput = reinterpret_cast<T*>(output);
-        //     for (uint32_t inputZIndex = 0; inputZIndex < pixelGroupSize.z; ++inputZIndex)
-        //     for (uint32_t inputYIndex = inputYIndexStart; inputYIndex < inputYIndexEnd; ++inputYIndex)
-        //     for (uint32_t inputXIndex = inputXIndexStart; inputXIndex <= inputXIndexEnd; inputXIndex += numberEncodedBytes)
-        //     {
-        //         uint32_t input_tid = inputZIndex * (inputWidthStep * inputHeight) + (inputYIndex * inputWidthStep) + inputXIndex;
-        //         T pixelValue;
-        //         pixelValue = ptrInput[input_tid / numberEncodedBytes];
-
-        //         // uint16_t toto = pixelValue.x;
-        //         // // Swap endianness
-        //         // uint8_t b1, b2;
-        //         // b1 = toto & 255;
-        //         // b2 = (toto >> 8) & 255;
-        //         // uint16_t voxelLittleEndian = (b1 << 8) + b2;
-        //         // channelSum += static_cast<double>(voxelLittleEndian);
-
-        //         channelSum += static_cast<double>(pixelValue.x);
-        //     }
-
-        //     T out;
-        //     // out.x = static_cast<uint16_t>(channelSum.x / static_cast<uint64_t>(pixelGroupArea));
-        //     out.x = channelSum / static_cast<double>(pixelGroupArea);
-        //     ptrOutput[output_tid / numberEncodedBytes] = out;
-        // }
-        // else
-        // {
-        uint64_t channelSum = 0;
-        for (uint32_t inputZIndex = 0; inputZIndex < pixelGroupSize.z; ++inputZIndex)
+        if (numberChannels == 1)
+        {
+            double channelSum;
+            T *ptrInput = reinterpret_cast<T*>(input);
+            T *ptrOutput = reinterpret_cast<T*>(output);
+            for (uint32_t inputZIndex = 0; inputZIndex < pixelGroupSize.z; ++inputZIndex)
             for (uint32_t inputYIndex = inputYIndexStart; inputYIndex < inputYIndexEnd; ++inputYIndex)
-                for (uint32_t inputXIndex = inputXIndexStart; inputXIndex <= inputXIndexEnd; inputXIndex += numberEncodedBytes)
-                {
-                    uint32_t input_tid = inputZIndex * (inputWidthStep * inputHeight) + (inputYIndex * inputWidthStep) + inputXIndex;
-                    channelSum += input[input_tid];
-                }
-
-        output[output_tid] = static_cast<uint8_t>(channelSum / pixelGroupArea);
-        // }
+            for (uint32_t inputXIndex = inputXIndexStart; inputXIndex <= inputXIndexEnd; inputXIndex += numberEncodedBytes)
+            {
+                uint32_t input_tid = inputZIndex * (inputWidthStep * inputHeight) + (inputYIndex * inputWidthStep) + inputXIndex;
+                T pixelValue = ptrInput[input_tid / numberEncodedBytes];
+                channelSum += static_cast<double>(pixelValue);
+            }
+            T out = channelSum / static_cast<double>(pixelGroupArea);
+            ptrOutput[output_tid / numberEncodedBytes] = out;
+        }
+        else
+        {
+            printf("ERROR : number of channels not supported\n");
+        }
     }
 
     //---------------------------------------------------------------------------------------------------
+
     void down_scale(uint8_t *output,
         const uint8_t *input,
         const uint32_t resX,
         const uint32_t resY,
         const uint32_t numberEncodedBytes,
         const uint32_t numberChannels,
+        tdns::data::DataTypeEnum dataType,
         tdns::math::Vector3ui ratioDownScale)
     {
         //device buffers
@@ -134,151 +115,32 @@ namespace preprocessor
         // Calculate grid size to cover the whole image (number of blocks)
         const dim3 grid((resX * numberChannels / ratioDownScale[0] + block.x - 1) / block.x, (resY / ratioDownScale[1] + block.y - 1) / block.y);
 
-        down_sampling <<<grid, block >>>(d_input,
-            d_output,
-            resX,
-            resY,
-            inputWidthBytes,
-            outputWidthBytes,
-            numberEncodedBytes,
-            numberChannels,
-            *reinterpret_cast<uint3*>(ratioDownScale.data()));
+#define CALL_DOWNSAMPLE_SAMPLING(TYPE)  \
+  down_sampling <TYPE> <<<grid, block >>> ( \
+    d_input, d_output, resX, resY,          \
+    inputWidthBytes, outputWidthBytes,      \
+    numberEncodedBytes, numberChannels,     \
+    *reinterpret_cast<uint3*>(ratioDownScale.data()))
+        if      (dataType == tdns::data::TYPE_UCHAR)  CALL_DOWNSAMPLE_SAMPLING(uint8_t );
+        else if (dataType == tdns::data::TYPE_USHORT) CALL_DOWNSAMPLE_SAMPLING(uint16_t);
+        else if (dataType == tdns::data::TYPE_UINT)   CALL_DOWNSAMPLE_SAMPLING(uint32_t);
+        else if (dataType == tdns::data::TYPE_CHAR)   CALL_DOWNSAMPLE_SAMPLING(int8_t  );
+        else if (dataType == tdns::data::TYPE_SHORT)  CALL_DOWNSAMPLE_SAMPLING(int16_t );
+        else if (dataType == tdns::data::TYPE_INT)    CALL_DOWNSAMPLE_SAMPLING(int32_t );
+        else if (dataType == tdns::data::TYPE_FLOAT)  CALL_DOWNSAMPLE_SAMPLING(float   );
+        else if (dataType == tdns::data::TYPE_DOUBLE) CALL_DOWNSAMPLE_SAMPLING(double  );
+        else throw std::runtime_error("Unsupported data type: " + std::to_string(dataType));
+#undef CALL_DOWNSAMPLE_SAMPLING
 
-        //Synchronize to check for any kernel launch errors
+        // Synchronize to check for any kernel launch errors
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
         CUDA_CHECK_KERNEL_ERROR();
 
-        //Copy back data from destination device memory to output image in CPU memory
+        // Copy back data from destination device memory to output image in CPU memory
         CUDA_SAFE_CALL(cudaMemcpy(output, d_output, outputSize, cudaMemcpyDeviceToHost));
 
         CUDA_SAFE_CALL(cudaFree(d_input));
         CUDA_SAFE_CALL(cudaFree(d_output));
-    }
-
-    //---------------------------------------------------------------------------------------------------
-    void process_mipmapping(const MipmappingConfiguration& configuration)
-    {
-        std::string mipmapDirectory = configuration.outputDirectory + "mipmap/";
-
-        if (!tdns::common::is_dir(mipmapDirectory))
-            tdns::common::create_folder(mipmapDirectory);
-
-        tdns::math::Vector3ui dimension = configuration.levelDimension;
-        tdns::math::Vector3ui ratioDownScale = configuration.downScaleRatio;
-        uint32_t numberEncodedBytes = configuration.encodedBytes;
-        uint32_t numberChannels = configuration.numberChannels;
-
-        std::string fileName = configuration.volumeDirectory + configuration.volumeFileName;
-        // Get the file
-        std::unique_ptr<tdns::data::AbstractFile> fileUp = tdns::data::FilesManager::get_instance().get_file(fileName);
-        if (!fileUp)
-        {
-            LOGERROR(20, "Cannot find the file " + fileName);
-            return;
-        }
-
-        fileUp->open();
-
-        // Largest dimension of the 3 axis of the initial volume.
-        const uint32_t maxDim = std::max(dimension[0] /* FIXME : * ratio voxel en x*/, std::max(dimension[1]/* FIXME : * ratio voxel en y */, dimension[2]/* FIXME : * ratio voxel en z */));
-        // Highest level of the pyramid.
-        const uint32_t levelMax = static_cast<uint32_t>(std::ceil(std::log(maxDim / configuration.brickSize[0]) / std::log(2)));
-
-        tdns::math::Vector3ui curentDim = dimension;
-
-        LOGINFO(20, tdns::common::log_details::Verbosity::MEDIUM, "Processing volume " << fileName);
-        LOGINFO(20, tdns::common::log_details::Verbosity::MEDIUM, "Mipmap pyramid : " << levelMax << " levels");
-
-        // Allocation of input and output buffers
-        // ----------------------------------------------------------------------
-        uint64_t inputSize = MAX_BYTES_SEND_TO_GPU;
-        uint64_t outputSize = inputSize / (ratioDownScale[0] * ratioDownScale[1] * ratioDownScale[2]);
-
-        uint8_t *input = nullptr;
-        uint8_t *output = nullptr;
-
-        // Pinned memory (non paginable) allocation of the input and the output host buffers
-        CUDA_SAFE_CALL(cudaHostAlloc(&input, inputSize, cudaHostAllocWriteCombined));
-        CUDA_SAFE_CALL(cudaHostAlloc(&output, outputSize, cudaHostAllocDefault));
-        // ----------------------------------------------------------------------
-
-        std::unique_ptr<tdns::data::AbstractFile> fileDown;
-        // For each level of the mipmap pyramid
-        for (uint64_t level = 1; level <= levelMax; ++level)
-        {
-            LOGINFO(20, tdns::common::log_details::Verbosity::MEDIUM, "level : " << level << " starting ...");
-
-            // Create the new file for the current level of the mipmap pyramid
-            std::string fileDownName = "L" + std::to_string(level) + ".raw";
-            fileDown = tdns::common::create_unique_ptr<tdns::data::RAWFile>(mipmapDirectory + fileDownName);
-
-            fileDown->open();
-
-            // How many lines can be send to the GPU
-            uint32_t nbLines = MAX_BYTES_SEND_TO_GPU / (curentDim[0] * numberEncodedBytes * ratioDownScale[2]);
-
-            // Limit at one complete slide in case of small volumes.
-            nbLines = std::min(nbLines, curentDim[1]);
-
-            // For each slices of the current level volume
-            for (uint64_t i = 0; i < curentDim[2]; i += ratioDownScale[2])
-            {
-                uint64_t nbLinesToRead = nbLines;
-                uint64_t linesIndex = 0;
-
-                // As long as there are lines
-                while (linesIndex < curentDim[1])
-                {
-                    uint64_t sizeToRead = nbLinesToRead * curentDim[0] * numberEncodedBytes;
-                    uint64_t sizeTowrite = (curentDim[0] / ratioDownScale[0]) * (nbLinesToRead / ratioDownScale[1]) * numberEncodedBytes;
-
-                    // for each slice of the current z down sampling ratio
-                    for (uint64_t j = 0; j < ratioDownScale[2]; ++j)
-                    {
-                        uint64_t sliceAbsolutePosition = (i + j) * curentDim[0] * curentDim[1] * numberEncodedBytes;
-                        uint64_t cursorPosition = sliceAbsolutePosition + linesIndex * curentDim[0] * numberEncodedBytes;
-                        fileUp->set_absolute_cursor_position(cursorPosition);
-                        fileUp->read(&input[j * sizeToRead], static_cast<uint32_t>(sizeToRead));
-                    }
-
-                    down_scale(output, input, curentDim[0], static_cast<uint32_t>(nbLinesToRead), numberEncodedBytes, numberChannels, ratioDownScale);
-
-                    fileDown->write(output, static_cast<uint32_t>(sizeTowrite));
-
-                    linesIndex += nbLinesToRead;
-                    if (linesIndex + nbLinesToRead > curentDim[1]) nbLinesToRead = curentDim[1] - linesIndex;
-                }
-            }
-
-            if (curentDim[0] > ratioDownScale[0]) curentDim[0] /= ratioDownScale[0];
-            if (curentDim[1] > ratioDownScale[1]) curentDim[1] /= ratioDownScale[1];
-            if (curentDim[2] > ratioDownScale[2]) curentDim[2] /= ratioDownScale[2];
-
-            // fileDown becomes fileUp
-            fileUp.swap(fileDown);
-
-            LOGINFO(20, tdns::common::log_details::Verbosity::MEDIUM, "level : " << level << " done !");
-        }
-
-        CUDA_SAFE_CALL(cudaFreeHost(output));
-        CUDA_SAFE_CALL(cudaFreeHost(input));
-    }
-
-    //---------------------------------------------------------------------------------------------------
-    void fill_metaData(std::vector<tdns::math::Vector3ui> &initialLevels, uint32_t levels, tdns::math::Vector3ui dimension, tdns::math::Vector3ui ratioDownScale)
-    {
-        uint32_t sizeX = dimension[0];
-        uint32_t sizeY = dimension[1];
-        uint32_t sizeZ = dimension[2];
-
-        for (uint32_t i = 0; i <= levels; ++i)
-        {
-            initialLevels.push_back(tdns::math::Vector3ui(sizeX, sizeY, sizeZ));
-
-            if (sizeX >= ratioDownScale[0]) sizeX /= ratioDownScale[0];
-            if (sizeY >= ratioDownScale[1]) sizeY /= ratioDownScale[1];
-            if (sizeZ >= ratioDownScale[2]) sizeZ /= ratioDownScale[2];
-        }
     }
 
     //---------------------------------------------------------------------------------------------------
@@ -302,16 +164,31 @@ namespace preprocessor
     //---------------------------------------------------------------------------------------------------
     bool Mipmapper::init(tdns::math::Vector3ui &dimension,
                             tdns::math::Vector3ui &ratioDownScale,
+                            tdns::data::DataTypeEnum &dataType,
                             uint32_t &numberEncodedBytes,
                             uint32_t &numberChannels,
                             std::string &mipmapDirectory)
     {
         tdns::data::Configuration &conf = tdns::data::Configuration::get_instance();
 
+        std::string dataTypeStr;
+        if (!conf.get_field("DataType", dataTypeStr))
+        {
+            LOGERROR(20, "Unable to get the DataType from configuration file.");
+            throw std::runtime_error("Unable to get the DataType from configuration file.");
+        }
+        dataType = tdns::data::getDataTypeEnum(dataTypeStr);
+
         if (!conf.get_field("NumberEncodedBytes", numberEncodedBytes))
         {
             LOGERROR(20, "Unable to get the NumberEncodedBytes from configuration file. Set default value to 1.");
             numberEncodedBytes = 1;
+        }
+
+        if (tdns::data::getDataTypeSize(dataType) != numberEncodedBytes)
+        {
+            LOGERROR(20, "The NumberEncodedBytes is not consistent with the DataType.");
+            throw std::runtime_error("The NumberEncodedBytes is not consistent with the DataType.");
         }
 
         if (!conf.get_field("NumberChannels", numberChannels))
@@ -403,9 +280,10 @@ namespace preprocessor
         uint32_t numberEncodedBytes;
         std::string mipmapDirectory;
         uint32_t numberChannels;
+        tdns::data::DataTypeEnum dataType;
         
         // initialization
-        if (!init(dimension, ratioDownScale, numberEncodedBytes, numberChannels, mipmapDirectory))
+        if (!init(dimension, ratioDownScale, dataType, numberEncodedBytes, numberChannels, mipmapDirectory))
         {
             LOGERROR(20, "Mipmapper initialization failed !");
             return;
@@ -469,13 +347,13 @@ namespace preprocessor
                     // for each slice of the current z down sampling ratio
                     for (uint64_t j = 0; j < ratioDownScale[2]; ++j)
                     {
-                        uint64_t sliceAbsolutePosition = (i + j) * curentDim[0] * curentDim[1] * numberEncodedBytes;
+                        uint64_t sliceAbsolutePosition = std::min<uint64_t>(i+j, curentDim[2]-1) * curentDim[0] * curentDim[1] * numberEncodedBytes;
                         uint64_t cursorPosition = sliceAbsolutePosition + linesIndex * curentDim[0] * numberEncodedBytes;
                         fileUp->set_absolute_cursor_position(cursorPosition);
                         fileUp->read(&input[j * sizeToRead], static_cast<uint32_t>(sizeToRead));
                     }
 
-                    down_scale(output, input, curentDim[0], static_cast<uint32_t>(nbLinesToRead), numberEncodedBytes, numberChannels, ratioDownScale);
+                    down_scale(output, input, curentDim[0], static_cast<uint32_t>(nbLinesToRead), numberEncodedBytes, numberChannels, dataType, ratioDownScale);
 
                     fileDown->write(output, static_cast<uint32_t>(sizeTowrite));
 
@@ -507,53 +385,11 @@ namespace preprocessor
                                     const uint32_t resY,
                                     const uint32_t numberEncodedBytes,
                                     const uint32_t numberChannels,
+                                    tdns::data::DataTypeEnum dataType,
                                     tdns::math::Vector3ui ratioDownScale)
     {
-        //device buffers
-        uint8_t *d_input, *d_output;
-
-        uint32_t inputSize = resX * resY * numberEncodedBytes * ratioDownScale[2];
-        uint32_t outputSize = (resX / ratioDownScale[0]) * (resY / ratioDownScale[1]) * numberEncodedBytes;
-
-        // Size in bytes of a "line" of the image for the input and for the output.
-        uint32_t inputWidthBytes = resX * numberEncodedBytes;
-        uint32_t outputWidthBytes = (resX / ratioDownScale[0]) * numberEncodedBytes;
-
-        // Allocate device memory
-        CUDA_SAFE_CALL(cudaMalloc<uint8_t>(&d_input, inputSize));
-        CUDA_SAFE_CALL(cudaMalloc<uint8_t>(&d_output, outputSize));
-     
-        // Copy data from host input to device memory
-        CUDA_SAFE_CALL(cudaMemcpy(d_input, input, inputSize, cudaMemcpyHostToDevice));
-
-        // Specify a reasonable block size (number of threads per block)
-        const dim3 block(16, 16);
-        // Calculate grid size to cover the whole image (number of blocks)
-        const dim3 grid( (resX * numberChannels / ratioDownScale[0] + block.x - 1) / block.x, (resY / ratioDownScale[1] + block.y - 1) / block.y);
-
-        down_sampling<<<grid,block>>>(   d_input,
-                                            d_output,
-                                            resX,
-                                            resY,
-                                            inputWidthBytes,
-                                            outputWidthBytes,
-                                            numberEncodedBytes,
-                                            numberChannels,
-                                            *reinterpret_cast<uint3*>(ratioDownScale.data()));
-        
-
-        //Synchronize to check for any kernel launch errors
-        CUDA_SAFE_CALL(cudaDeviceSynchronize());
-        CUDA_CHECK_KERNEL_ERROR();
- 
-        //Copy back data from destination device memory to output image in CPU memory
-        CUDA_SAFE_CALL(cudaMemcpy(output, d_output, outputSize, cudaMemcpyDeviceToHost));
-
-        CUDA_SAFE_CALL(cudaFree(d_input));
-        CUDA_SAFE_CALL(cudaFree(d_output));
+        tdns::preprocessor::down_scale(output, input, resX, resY, numberEncodedBytes, numberChannels, dataType, ratioDownScale);
     }
-
-    
 
     //---------------------------------------------------------------------------------------------------
     void Mipmapper::fill_metaData(std::vector<tdns::math::Vector3ui> &initialLevels, uint32_t levels, tdns::math::Vector3ui dimension, tdns::math::Vector3ui ratioDownScale)

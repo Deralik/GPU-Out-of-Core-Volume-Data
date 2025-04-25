@@ -1,4 +1,5 @@
 #include <thread>
+#include <string>
 #include <GcCore/libCommon/CppNorm.hpp>
 #include <GcCore/libCommon/FileSystem.hpp>
 #include <GcCore/libCommon/Logger/Logger.hpp>
@@ -17,7 +18,8 @@ int main(int argc, char **argv)
         if (!tdns::common::is_dir("log")) tdns::common::create_folder("log");
         tdns::common::Logger::get_instance().open("./log/3dns", log_formatter, true);
         //start the app !
-        tdns::app::Application app;
+        std::string config = std::string(argv[1]);
+        tdns::app::Application app(config);
         if (!app.init())
         {
             LOGFATAL(10, "Error while initializing the application.");

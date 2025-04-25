@@ -84,7 +84,7 @@ namespace gpucache
         */
         bool handle_request(const thrust::host_vector<uint4> &requestedBricks);
 
-    protected:
+    public:
 
         tdns::math::Vector3ui                                           _brickSize;         ///<
         tdns::math::Vector3ui                                           _bigBrickSize;      ///<
@@ -111,7 +111,7 @@ namespace gpucache
     inline RequestHandler<T>::RequestHandler(const tdns::data::VolumeConfiguration &volumeConfiguration, size_t nbMaxRequests, int32_t gpuID /*= 0*/)
     {
         _bricksManager = tdns::common::create_unique_ptr<tdns::data::BricksManager>
-            (volumeConfiguration.VolumeDirectory, volumeConfiguration.BrickSize, volumeConfiguration.BigBrickSize, sizeof(T));
+            (volumeConfiguration.INR_Path, volumeConfiguration.BrickSize, volumeConfiguration.BigBrickSize, sizeof(T));
         _nbMaxRequests = nbMaxRequests;
         _requestBuffer = tdns::common::create_unique_ptr<tdns::common::DynamicArray3dHost
             <T, tdns::common::DynamicArrayOptions::Options::Mapped>>
@@ -285,34 +285,102 @@ namespace gpucache
         tdns::data::Brick *brick = nullptr;
         tdns::data::BricksManager &bricksManager = *_bricksManager;
 
-        std::map<uint4, int32_t> bricksAlreadyAsked;
+        static std::map<uint4, int32_t> bricksAlreadyAsked;
         uint32_t cptMap = 0;
 
-        for (size_t i = 0; i < requestedBricks.size(); ++i)
+        // batch test code start
+        // const uint32_t nbReuqested = requestedBricks.size();
+
+        // tdns::math::Vector3ui coordinates[nbReuqested];
+        // uint32_t levels[nbReuqested];
+        // tdns::data::Brick* bricks[nbReuqested];
+        // for (size_t i = 0; i < nbReuqested; ++i)
+        // {
+        //     coordinates[i] = tdns::math::Vector3ui(requestedBricks[i].x / bigBrickSize[0],
+        //                                            requestedBricks[i].y / bigBrickSize[1],
+        //                                            requestedBricks[i].z / bigBrickSize[2]);
+        //     levels[i] = requestedBricks[i].w;
+
+        //     bricks[i] = nullptr;
+            
+        //     auto it = bricksAlreadyAsked.find({coordinates[i][0], coordinates[i][1], coordinates[i][2], levels[i]});
+        //     if (it != bricksAlreadyAsked.end())
+        //     {
+        //         if(it->second == -1 )//empty brick
+        //             _emptyFlags[i] = true;
+        //         else // non empty brick
+        //         {
+        //             _emptyFlags[i] = false;
+        //             _bigBrickIndexes[_nbNonEmptyBricks] = it->second;
+        //             _nbNonEmptyBricks++;
+        //         }
+        //     }
+        // }
+
+        // tdns::data::BricksManager::BrickStatus statusArr[nbReuqested];
+        // bricksManager.get_bricks(levels, coordinates, bricks, statusArr, nbReuqested);
+        
+        // for (size_t i = 0; i < nbReuqested; ++i)
+        // {
+        //     switch(statusArr[i])
+        //     {
+        //         case tdns::data::BricksManager::BrickStatus::Success:
+        //         {
+        //             //load brick in the mapped buffer
+        //             std::memcpy(&(*_requestBuffer)[nbBigBrickAdded * bigBrickSizeVoxels], bricks[i]->get_data().data(), bigBrickSizeVoxels * sizeof(T));
+        //             ++nbBigBrickAdded;
+        //             //add it to the map as non empty brick
+        //             bricksAlreadyAsked.insert({ {coordinates[i][0], coordinates[i][1], coordinates[i][2], levels[i]}, cptMap });
+        //             if (_nbNonEmptyBricks > _nbMaxRequests)
+        //                 assert(false && "Bricks number exceed the request buffer size ! RequestHandler.hpp handle_request()");
+        //             _bigBrickIndexes[_nbNonEmptyBricks] = cptMap;
+        //             _bigBrickCoords[cptMap] = {coordinates[i][0], coordinates[i][1], coordinates[i][2], levels[i]};
+        //             cptMap++;
+
+        //             _emptyFlags[i] = false;
+        //             ++_nbNonEmptyBricks;
+        //         }
+        //         break;
+        //         case tdns::data::BricksManager::BrickStatus::Empty:
+        //         {
+        //             //add it to the map as non empty brick
+        //             bricksAlreadyAsked.insert({ {coordinates[i][0], coordinates[i][1], coordinates[i][2], levels[i]}, -1 });
+        //             _emptyFlags[i] = true;
+        //         }
+        //         break;
+        //         default:
+        //             assert(false && "Unknown brick status ! We need to handle this !!!!!! RequestHandler.hpp handle_request()"); //We need to handle this !!!!!!
+        //             continue;
+        //     }
+        // }
+
+        // batch test code end
+
+        for (uint32_t i = 0; i < requestedBricks.size(); ++i)
         {
             const uint4 &coordinate = requestedBricks[i];
             const uint4 &coordinateBigBrick = make_uint4(   coordinate.x / bigBrickSize[0],
                                                             coordinate.y / bigBrickSize[1],
                                                             coordinate.z / bigBrickSize[2],
                                                             coordinate.w);
-            auto it = bricksAlreadyAsked.find(coordinateBigBrick);
-            if (it != bricksAlreadyAsked.end())
-            {
-                if(it->second == -1 )//empty brick
-                    _emptyFlags[i] = true;
-                else // non empty brick
-                {
-                    _emptyFlags[i] = false;
-                    _bigBrickIndexes[_nbNonEmptyBricks] = it->second;
-                    _nbNonEmptyBricks++;
-                }
-                continue;
-            }
+            // auto it = bricksAlreadyAsked.find(coordinateBigBrick);
+            // if (it != bricksAlreadyAsked.end())
+            // {
+            //     if(it->second == -1 )//empty brick
+            //         _emptyFlags[i] = true;
+            //     else // non empty brick
+            //     {
+            //         _emptyFlags[i] = false;
+            //         _bigBrickIndexes[_nbNonEmptyBricks] = it->second;
+            //         _nbNonEmptyBricks++;
+            //     }
+            //     continue;
+            // }
             
             //load the brick
             tdns::data::BricksManager::BrickStatus status =
                 bricksManager.get_brick(coordinateBigBrick.w,
-                { coordinateBigBrick.x, coordinateBigBrick.y, coordinateBigBrick.z }, &brick);
+                { coordinateBigBrick.x, coordinateBigBrick.y, coordinateBigBrick.z }, &brick, i);
 
             LOGINFO(40, tdns::common::log_details::Verbosity::INSANE, "Get brick Level [" << coordinateBigBrick.w
                 << "] position [" << coordinateBigBrick.x << " - " << coordinateBigBrick.y << " - " << coordinateBigBrick.z 
@@ -323,7 +391,7 @@ namespace gpucache
                 case tdns::data::BricksManager::BrickStatus::Success:
                 {
                     //load brick in the mapped buffer
-                    std::memcpy(&(*_requestBuffer)[nbBigBrickAdded * bigBrickSizeVoxels], brick->get_data().data(), bigBrickSizeVoxels * sizeof(T));
+                    // std::memcpy(&(*_requestBuffer)[nbBigBrickAdded * bigBrickSizeVoxels], brick->get_data().data(), bigBrickSizeVoxels * sizeof(T));
                     ++nbBigBrickAdded;
                     //add it to the map as non empty brick
                     bricksAlreadyAsked.insert({ coordinateBigBrick, cptMap });
@@ -349,6 +417,7 @@ namespace gpucache
                     continue;
             }
         }
+        // ------ Loop End ------
 
         if (_nbNonEmptyBricks - _askedBricks.size() != 0)
         {

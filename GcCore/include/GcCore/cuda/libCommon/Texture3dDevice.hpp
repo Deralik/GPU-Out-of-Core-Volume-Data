@@ -108,15 +108,18 @@ namespace common
         std::memset(&texDesc, 0, sizeof(texDesc));
         texDesc.addressMode[0]   = cudaAddressModeClamp;
         texDesc.addressMode[1]   = cudaAddressModeClamp;
+        texDesc.addressMode[2]   = cudaAddressModeClamp;
         switch(flag)
         {
-            default:
+            default: {
+                texDesc.filterMode       = cudaFilterModePoint;
                 texDesc.readMode         = cudaReadModeElementType;
+                texDesc.normalizedCoords = 0;
                 break;
-            case AccessMode::Normalized:
-            {
+            }
+            case AccessMode::Normalized: {
                 texDesc.filterMode       = cudaFilterModeLinear;
-                texDesc.readMode         = cudaReadModeNormalizedFloat; // only for 8-bit and 16-bit integer format, not for float
+                texDesc.readMode         = (sizeof(T) > 2) ? cudaReadModeElementType : cudaReadModeNormalizedFloat; // only for 8-bit and 16-bit integer format, not for float
                 texDesc.normalizedCoords = 1;
                 break;
             }
@@ -148,14 +151,18 @@ namespace common
         std::memset(&texDesc, 0, sizeof(texDesc));
         texDesc.addressMode[0]   = cudaAddressModeClamp;
         texDesc.addressMode[1]   = cudaAddressModeClamp;
+        texDesc.addressMode[2]   = cudaAddressModeClamp;
         switch(flag)
         {
-            default:
+            default: {
+                texDesc.filterMode       = cudaFilterModePoint;
                 texDesc.readMode         = cudaReadModeElementType;
-                break;
-            case AccessMode::Normalized:
-            {
+                texDesc.normalizedCoords = 0;
+                break;                
+            }
+            case AccessMode::Normalized: {
                 texDesc.filterMode       = cudaFilterModeLinear;
+                texDesc.readMode         = cudaReadModeElementType;
                 texDesc.normalizedCoords = 1;
                 break;
             }

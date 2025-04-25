@@ -191,11 +191,22 @@ namespace gpucache
     U K_CacheDevice<T>::get_normalized(const uint4 &tableEntry, uint32_t level, const float3 &position, uint32_t covering /*= 0*/)
     {
         uint3 elementPosition = compute_element_position(tableEntry, level, position, covering);
-        
+
+        // NOTE: We are missing the fractional part of the position. The fractional part is 
+        //       important for linear interpolation.
+        uint3 virtualizedNumberOfEntries = _virtualizedNumberOfEntries[level];
+        float3 elementCoord = make_float3(
+            position.x * virtualizedNumberOfEntries.x,
+            position.y * virtualizedNumberOfEntries.y,
+            position.z * virtualizedNumberOfEntries.z);
+        elementCoord.x = elementCoord.x - static_cast<uint32_t>(elementCoord.x) + elementPosition.x;
+        elementCoord.y = elementCoord.y - static_cast<uint32_t>(elementCoord.y) + elementPosition.y;
+        elementCoord.z = elementCoord.z - static_cast<uint32_t>(elementCoord.z) + elementPosition.z;
+
         float3 texturePosition = make_float3(
-            (elementPosition.x / static_cast<float>(_texture.size().x)),
-            (elementPosition.y / static_cast<float>(_texture.size().y)),
-            (elementPosition.z / static_cast<float>(_texture.size().z)));
+            (elementCoord.x / static_cast<float>(_texture.size().x)),
+            (elementCoord.y / static_cast<float>(_texture.size().y)),
+            (elementCoord.z / static_cast<float>(_texture.size().z)));
 
         return _texture.template get_normalized<U>(texturePosition);
     }

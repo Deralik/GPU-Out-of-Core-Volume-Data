@@ -35,6 +35,8 @@ namespace graphics
 
         SDL_Window* get_window();
 
+        SDL_GLContext get_gl_context();
+
     private:
 
         SDL_Window *_window;

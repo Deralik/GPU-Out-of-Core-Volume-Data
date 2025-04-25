@@ -51,6 +51,22 @@ namespace predicate
         T _ref;
     };
 
+    template<typename T>
+    struct is_greater_equal
+    {
+        is_greater_equal(const T &ref)
+        {
+            _ref = ref;
+        }
+        __host__ __device__
+        inline bool operator()(const T &value)
+        {
+            return value >= _ref;
+        }
+
+        T _ref;
+    };
+
 } // namespace predicate
 } // namespace gpucache
 } // namespace tdns

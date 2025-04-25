@@ -6,7 +6,7 @@ namespace gpucache
 {
     //---------------------------------------------------------------------------------------------------
     __global__ void create_usage_mask(uint3 blockSize,
-        LruContent *lru,
+        LruContent* __restrict__ lru,
         size_t lruSize,
         tdns::common::K_DynamicArray3dDevice<uint32_t> usage,
         uint32_t timestamp,
@@ -25,13 +25,15 @@ namespace gpucache
         position.y /= blockSize.y;
         position.z /= blockSize.z;
 
+        // printf("Cache pos:(%u, %u, %u) | Vol pos: (%f, %f, %f)\n", position.x, position.y, position.z, lru[index].volumePosition.x, lru[index].volumePosition.y, lru[index].volumePosition.z);
+
         mask[index] = (usage(position) == timestamp);
     }
 
     //---------------------------------------------------------------------------------------------------
     __global__ void coord_1D_to_3D(size_t *indexes,
         size_t nbElements,
-        uint4 *positions,
+        uint4* __restrict__ positions,
         tdns::common::K_DynamicArray3dDevice<uint3> realNumberOfEntries)
     {
         uint32_t thIndex = blockIdx.x * blockDim.x + threadIdx.x;
@@ -96,7 +98,7 @@ namespace gpucache
     {
         uint32_t threadId = blockIdx.x * blockDim.x + threadIdx.x;
 
-        if (threadId > nbBricks) return;
+        if (threadId >= nbBricks) return;
 
         uint32_t level = requestedBricks[threadId].w;
 
@@ -111,6 +113,41 @@ namespace gpucache
 
         lruTo[threadId].level = lruFrom[threadId].level;
         lruTo[threadId].volumePosition = lruFrom[threadId].volumePosition;
+    }
+
+    //---------------------------------------------------------------------------------------------------
+    __global__ void fillAllCoords(const uint3 brick_size, uint4* __restrict__ requested_bricks, const vnr::vec3f vol_dims, const uint32_t count,
+                                  vnr::vec3f* __restrict__ d_coords, vnr::vec3f* __restrict__ d_outCoords) {
+    
+        vnr::vec3i id(threadIdx.x + blockIdx.x * blockDim.x,
+                      threadIdx.y + blockIdx.y * blockDim.y,
+                      threadIdx.z + blockIdx.z * blockDim.z);
+
+        // Calculate brick index and coordinates within the brick
+        const uint32_t brick_id = id.x / brick_size.x;
+        id.x %= brick_size.x;
+        id.y %= brick_size.y;
+        id.z %= brick_size.z;
+
+        if (brick_id >= count)    return;
+        if (id.x >= brick_size.x) return;
+        if (id.y >= brick_size.y) return;
+        if (id.z >= brick_size.z) return;
+
+        const vnr::vec3i brick_offset(requested_bricks[brick_id].x * (brick_size.x - 2),
+                                      requested_bricks[brick_id].y * (brick_size.y - 2),
+                                      requested_bricks[brick_id].z * (brick_size.z - 2));
+        const uint32_t lod_scale = pow(2,requested_bricks[brick_id].w);
+
+        // Calculate the linear index for the specific coordinate
+        const uint32_t idx = (id.z * brick_size.x * brick_size.y) + (id.y * brick_size.x) + id.x;
+        const uint32_t outIndex = idx + (brick_size.x * brick_size.y * brick_size.z * brick_id);
+
+        d_outCoords[outIndex].x = (brick_offset.x + d_coords[idx].x - 0.5) * lod_scale / vol_dims.x;
+        d_outCoords[outIndex].y = (brick_offset.y + d_coords[idx].y - 0.5) * lod_scale / vol_dims.y;
+        d_outCoords[outIndex].z = (brick_offset.z + d_coords[idx].z - 0.5) * lod_scale / vol_dims.z;
+
+        // printf("lod: %u\n", lod_scales[brick_id]);
     }
 
     //---------------------------------------------------------------------------------------------------

@@ -24,7 +24,7 @@ namespace data
         *
         * @param path.
         */
-        RAWFile(const std::string &filePath);
+        RAWFile(const std::string &filePath, bool readonly = false);
 
         /**
         * @brief Destructor.
@@ -92,6 +92,7 @@ namespace data
         /**
         * Member data.
         */
+       const bool readonly;
     };
 } //namespace data
 } //namespace tdns
