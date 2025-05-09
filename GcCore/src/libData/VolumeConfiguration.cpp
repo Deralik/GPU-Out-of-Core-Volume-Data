@@ -45,18 +45,18 @@ namespace data
             throw std::runtime_error("VolumeConfiguration: Missing NumberChannels in configuration.");
 
 
-        if (!conf.get_field("VolumeFile", volumeConfiguration.VolumeFileName))
-            throw std::runtime_error("VolumeConfiguration: Missing VolumeFile in configuration.");
+        // if (!conf.get_field("VolumeFile", volumeConfiguration.VolumeFileName))
+        //     throw std::runtime_error("VolumeConfiguration: Missing VolumeFile in configuration.");
 
         if (!conf.get_field("INR_Path", volumeConfiguration.INR_Path))
             throw std::runtime_error("VolumeConfiguration: Missing INR_Path in configuration.");
 
         //--------------------
         // @TODO: Need to fix this step
-        std::string workingDirectory;
-        conf.get_field("WorkingDirectory", workingDirectory);
-        std::string volumeDirectory = workingDirectory + tdns::common::get_file_base_name(volumeConfiguration.VolumeFileName) + "/";
-        conf.add_field("VolumeDirectory", volumeDirectory);
+        // std::string workingDirectory;
+        // conf.get_field("WorkingDirectory", workingDirectory);
+        // std::string volumeDirectory = workingDirectory + tdns::common::get_file_base_name(volumeConfiguration.VolumeFileName) + "/";
+        // conf.add_field("VolumeDirectory", volumeDirectory);
         //-----------------------------------------
 
         if (!conf.get_field("VolumeDirectory", volumeConfiguration.VolumeDirectory))
